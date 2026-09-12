@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 10mm;
+  }
+
+  html, body, #root, #datapilot-workspace {
+    height: auto !important;
+    min-height: 100% !important;
+    width: auto !important;
+    overflow: visible !important;
+    background: white !important;
+    color: black !important;
+    display: block !important;
+  }
+
+  /* Hide navigation, sidebars, and AI panel globally */
+  #workspace-navbar,
+  #database-explorer-sidebar,
+  #ai-data-assistant-panel {
+    display: none !important;
+  }
+
+  /* Ensure the workspace main content flows naturally */
+  main, .flex-1 {
+    height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+    background: white !important;
+    padding: 0 !important;
+  }
+
+  /* Force grid blocks to behave for page breaks if necessary */
+  .grid {
+    display: grid !important;
+  }
+
+  /* Override dark mode text */
+  * {
+    color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

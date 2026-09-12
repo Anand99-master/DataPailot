@@ -1,0 +1,889 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  LayoutDashboard,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Grid,
+  Download,
+  FileText,
+  FileSpreadsheet,
+  FileCode,
+  SlidersHorizontal,
+  Layers,
+  ArrowLeft,
+  Trash2,
+  Copy,
+  Edit3,
+  Check,
+  X,
+  Play,
+  Maximize2,
+  Minimize2,
+  Clock,
+  Camera,
+  AlertTriangle,
+  HelpCircle,
+  Database,
+  Search,
+  Filter,
+  BarChart3
+} from 'lucide-react';
+import {
+  Dashboard,
+  DashboardWidget,
+  DashboardFilter,
+  DashboardInsightItem
+} from '../../types/dashboard';
+import { DiscoveredTable, QueryResult } from '../../types/database';
+import { DashboardService } from '../../services/dashboardService';
+import { DashboardRefreshService } from '../../services/dashboardRefreshService';
+import { DashboardExportService } from '../../services/dashboardExportService';
+import { DatabaseApiClient } from '../../services/databaseApi';
+
+import { DashboardList } from './DashboardList';
+import { DashboardWidgetCard } from './DashboardWidgetCard';
+import { DashboardFilterBar } from './DashboardFilterBar';
+import { DashboardTemplatesModal } from './DashboardTemplatesModal';
+import { DashboardAiBuilderModal } from './DashboardAiBuilderModal';
+import { DashboardInsightsDrawer } from './DashboardInsightsDrawer';
+import { AddToDashboardModal } from './AddToDashboardModal';
+
+interface DashboardWorkspaceProps {
+  discoveredTables: DiscoveredTable[];
+  isConnected: boolean;
+  onNavigateToSqlEditor: (sql: string) => void;
+  onNavigateToVisualization: (result?: QueryResult) => void;
+  onNavigateToAnalysis: () => void;
+}
+
+export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
+  discoveredTables,
+  isConnected,
+  onNavigateToSqlEditor,
+  onNavigateToVisualization,
+  onNavigateToAnalysis
+}) => {
+  const [dashboards, setDashboards] = useState<Dashboard[]>([]);
+  const [currentDashboardId, setCurrentDashboardId] = useState<string | null>(null);
+
+  // Results cache for the active dashboard widgets
+  const [widgetResults, setWidgetResults] = useState<Map<string, QueryResult>>(new Map());
+  const [refreshingWidgets, setRefreshingWidgets] = useState<Set<string>>(new Set());
+  const [isRefreshingAll, setIsRefreshingAll] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
+
+  // Interactive modes
+  const [isSnapshotMode, setIsSnapshotMode] = useState(false);
+  const [isPresentationMode, setIsPresentationMode] = useState(false);
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(0);
+  const [crossFilter, setCrossFilter] = useState<{ column: string; value: string } | null>(null);
+
+  // Modals & Drawers
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [isAiBuilderOpen, setIsAiBuilderOpen] = useState(false);
+  const [isInsightsOpen, setIsInsightsOpen] = useState(false);
+  const [isAddWidgetOpen, setIsAddWidgetOpen] = useState(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+
+  // Inline editing
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState('');
+  const [isEditingDesc, setIsEditingDesc] = useState(false);
+  const [descInput, setDescInput] = useState('');
+
+  // Insights State
+  const [insights, setInsights] = useState<DashboardInsightItem[]>([]);
+  const [isLoadingInsights, setIsLoadingInsights] = useState(false);
+
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  // Load initial dashboards
+  useEffect(() => {
+    const list = DashboardService.getDashboards();
+    setDashboards(list);
+  }, []);
+
+  const currentDashboard = dashboards.find(d => d.id === currentDashboardId) || null;
+
+  // Sync title inputs when currentDashboard changes
+  useEffect(() => {
+    if (currentDashboard) {
+      setTitleInput(currentDashboard.name);
+      setDescInput(currentDashboard.description || '');
+      setAutoRefreshInterval(currentDashboard.autoRefreshInterval || 0);
+
+      // Hydrate cached widget results if available
+      const cached = new Map<string, QueryResult>();
+      for (const w of currentDashboard.widgets) {
+        if (w.cachedResult) {
+          cached.set(w.id, w.cachedResult);
+        }
+      }
+      setWidgetResults(cached);
+    }
+  }, [currentDashboardId]);
+
+  // Handle Fullscreen Keydown (Esc)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isPresentationMode) {
+        setIsPresentationMode(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPresentationMode]);
+
+  // Handle Auto-Refresh Timer
+  useEffect(() => {
+    if (!currentDashboard || autoRefreshInterval <= 0 || isSnapshotMode) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      handleRefreshAll();
+    }, autoRefreshInterval * 1000);
+
+    return () => clearInterval(timer);
+  }, [currentDashboard, autoRefreshInterval, isSnapshotMode, crossFilter]);
+
+  // Centralized Refresh Handler
+  const handleRefreshAll = async () => {
+    if (!currentDashboard) return;
+    setIsRefreshingAll(true);
+
+    try {
+      // Build effective filters including cross-filter if present
+      let effectiveFilters = [...currentDashboard.filters];
+      if (crossFilter) {
+        effectiveFilters.push({
+          id: 'cross-filter-active',
+          label: `Filter by ${crossFilter.column}`,
+          type: 'text',
+          targetColumn: crossFilter.column,
+          currentValue: crossFilter.value
+        });
+      }
+
+      const summary = await DashboardRefreshService.refreshDashboard(
+        currentDashboard,
+        effectiveFilters,
+        discoveredTables
+      );
+
+      // Update widget results
+      const newResults = new Map(widgetResults);
+      let updatedWidgets = [...currentDashboard.widgets];
+
+      summary.results.forEach((res, widgetId) => {
+        if (res.result) {
+          newResults.set(widgetId, res.result);
+        }
+        const wIdx = updatedWidgets.findIndex(w => w.id === widgetId);
+        if (wIdx >= 0) {
+          updatedWidgets[wIdx] = {
+            ...updatedWidgets[wIdx],
+            status: res.status,
+            cachedResult: res.result || updatedWidgets[wIdx].cachedResult,
+            errorMessage: res.errorMessage,
+            schemaChangeDetails: res.schemaChangeDetails,
+            lastExecutedAt: new Date().toISOString()
+          };
+        }
+      });
+
+      setWidgetResults(newResults);
+      setLastRefreshedAt(
+        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      );
+
+      // Persist updated widget statuses
+      const updatedDash: Dashboard = {
+        ...currentDashboard,
+        widgets: updatedWidgets,
+        updatedAt: new Date().toISOString()
+      };
+      DashboardService.saveDashboard(updatedDash);
+      setDashboards(DashboardService.getDashboards());
+    } catch (err) {
+      console.error('Failed to refresh dashboard:', err);
+    } finally {
+      setIsRefreshingAll(false);
+    }
+  };
+
+  // Refresh single widget
+  const handleRefreshWidget = async (widgetId: string) => {
+    if (!currentDashboard) return;
+    const widget = currentDashboard.widgets.find(w => w.id === widgetId);
+    if (!widget) return;
+
+    setRefreshingWidgets(prev => new Set(prev).add(widgetId));
+
+    try {
+      let effectiveFilters = [...currentDashboard.filters];
+      if (crossFilter) {
+        effectiveFilters.push({
+          id: 'cross-filter-active',
+          label: crossFilter.column,
+          type: 'text',
+          targetColumn: crossFilter.column,
+          currentValue: crossFilter.value
+        });
+      }
+
+      // Safe refresh single widget
+      const res = await DashboardRefreshService.refreshSingleWidget(
+        widget,
+        effectiveFilters,
+        discoveredTables
+      );
+
+      if (res.result) {
+        setWidgetResults(prev => new Map(prev).set(widgetId, res.result!));
+      }
+
+      const updated = DashboardService.updateWidget(currentDashboard.id, widgetId, {
+        status: res.status,
+        cachedResult: res.result || widget.cachedResult,
+        errorMessage: res.errorMessage,
+        schemaChangeDetails: res.schemaChangeDetails,
+        lastExecutedAt: new Date().toISOString()
+      });
+
+      if (updated) {
+        setDashboards(DashboardService.getDashboards());
+      }
+    } finally {
+      setRefreshingWidgets(prev => {
+        const next = new Set(prev);
+        next.delete(widgetId);
+        return next;
+      });
+    }
+  };
+
+  // Create New Blank Dashboard
+  const handleCreateNew = () => {
+    const created = DashboardService.createDashboard('New Executive Dashboard');
+    setDashboards(DashboardService.getDashboards());
+    setCurrentDashboardId(created.id);
+  };
+
+  // Duplicate Dashboard
+  const handleDuplicate = (id: string) => {
+    const dup = DashboardService.duplicateDashboard(id);
+    if (dup) {
+      setDashboards(DashboardService.getDashboards());
+      setCurrentDashboardId(dup.id);
+    }
+  };
+
+  // Delete Dashboard
+  const handleDelete = (id: string) => {
+    if (confirm('Are you sure you want to delete this dashboard?')) {
+      DashboardService.deleteDashboard(id);
+      setDashboards(DashboardService.getDashboards());
+      if (currentDashboardId === id) {
+        setCurrentDashboardId(null);
+      }
+    }
+  };
+
+  // Save Inline Title
+  const handleSaveTitle = () => {
+    if (!currentDashboard || !titleInput.trim()) return;
+    DashboardService.renameDashboard(currentDashboard.id, titleInput.trim());
+    setDashboards(DashboardService.getDashboards());
+    setIsEditingTitle(false);
+  };
+
+  // Save Inline Description
+  const handleSaveDesc = () => {
+    if (!currentDashboard) return;
+    const updated = {
+      ...currentDashboard,
+      description: descInput.trim(),
+      updatedAt: new Date().toISOString()
+    };
+    DashboardService.saveDashboard(updated);
+    setDashboards(DashboardService.getDashboards());
+    setIsEditingDesc(false);
+  };
+
+  // Widget Actions: Resize, Remove, Move
+  const handleResizeWidget = (widgetId: string, colSpan: 3 | 4 | 6 | 8 | 12) => {
+    if (!currentDashboard) return;
+    const widget = currentDashboard.widgets.find(w => w.id === widgetId);
+    if (!widget) return;
+    DashboardService.updateWidget(currentDashboard.id, widgetId, {
+      size: { ...widget.size, colSpan }
+    });
+    setDashboards(DashboardService.getDashboards());
+  };
+
+  const handleRemoveWidget = (widgetId: string) => {
+    if (!currentDashboard) return;
+    DashboardService.removeWidget(currentDashboard.id, widgetId);
+    setDashboards(DashboardService.getDashboards());
+    setWidgetResults(prev => {
+      const next = new Map(prev);
+      next.delete(widgetId);
+      return next;
+    });
+  };
+
+  const handleMoveWidget = (widgetId: string, direction: 'prev' | 'next') => {
+    if (!currentDashboard) return;
+    const widgets = [...currentDashboard.widgets];
+    const idx = widgets.findIndex(w => w.id === widgetId);
+    if (idx < 0) return;
+
+    const targetIdx = direction === 'prev' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= widgets.length) return;
+
+    // Swap
+    const temp = widgets[idx];
+    widgets[idx] = widgets[targetIdx];
+    widgets[targetIdx] = temp;
+
+    // Update positions
+    widgets.forEach((w, i) => {
+      w.position = { ...w.position, order: i };
+    });
+
+    const updated = {
+      ...currentDashboard,
+      widgets,
+      updatedAt: new Date().toISOString()
+    };
+    DashboardService.saveDashboard(updated);
+    setDashboards(DashboardService.getDashboards());
+  };
+
+  // Filter Actions
+  const handleUpdateFilter = (
+    filterId: string,
+    value: any,
+    dateFrom?: string,
+    dateTo?: string
+  ) => {
+    if (!currentDashboard) return;
+    const updatedFilters = currentDashboard.filters.map(f => {
+      if (f.id === filterId) {
+        return {
+          ...f,
+          currentValue: value,
+          dateFrom: dateFrom !== undefined ? dateFrom : f.dateFrom,
+          dateTo: dateTo !== undefined ? dateTo : f.dateTo
+        };
+      }
+      return f;
+    });
+
+    const updated = {
+      ...currentDashboard,
+      filters: updatedFilters,
+      updatedAt: new Date().toISOString()
+    };
+    DashboardService.saveDashboard(updated);
+    setDashboards(DashboardService.getDashboards());
+  };
+
+  const handleAddFilter = (newFilter: DashboardFilter) => {
+    if (!currentDashboard) return;
+    const updated = {
+      ...currentDashboard,
+      filters: [...currentDashboard.filters, newFilter],
+      updatedAt: new Date().toISOString()
+    };
+    DashboardService.saveDashboard(updated);
+    setDashboards(DashboardService.getDashboards());
+  };
+
+  const handleRemoveFilter = (filterId: string) => {
+    if (!currentDashboard) return;
+    const updated = {
+      ...currentDashboard,
+      filters: currentDashboard.filters.filter(f => f.id !== filterId),
+      updatedAt: new Date().toISOString()
+    };
+    DashboardService.saveDashboard(updated);
+    setDashboards(DashboardService.getDashboards());
+  };
+
+  const handleClearAllFilters = () => {
+    if (!currentDashboard) return;
+    const cleared = currentDashboard.filters.map(f => ({
+      ...f,
+      currentValue: f.type === 'single_select' ? 'ALL' : '',
+      dateFrom: undefined,
+      dateTo: undefined
+    }));
+    const updated = {
+      ...currentDashboard,
+      filters: cleared,
+      updatedAt: new Date().toISOString()
+    };
+    DashboardService.saveDashboard(updated);
+    setDashboards(DashboardService.getDashboards());
+  };
+
+  // Generate Insights Handler
+  const handleGenerateInsights = async () => {
+    if (!currentDashboard) return;
+    setIsLoadingInsights(true);
+    setIsInsightsOpen(true);
+
+    try {
+      const widgetSummaries = currentDashboard.widgets
+        .filter(w => widgetResults.has(w.id) || w.cachedResult)
+        .map(w => {
+          const res = widgetResults.get(w.id) || w.cachedResult!;
+          return {
+            title: w.title,
+            chartType: w.chartType,
+            rowCount: res.rowCount,
+            columns: res.columns.map(c => c.name),
+            sampleMetrics: res.rows.slice(0, 3).reduce((acc: any, row, i) => {
+              acc[`sample_row_${i + 1}`] = row;
+              return acc;
+            }, {})
+          };
+        });
+
+      const res = await DatabaseApiClient.generateDashboardInsightsWithAi(
+        currentDashboard.name,
+        widgetSummaries
+      );
+      setInsights(res.insights || []);
+    } catch (err) {
+      console.error('Failed to generate insights:', err);
+    } finally {
+      setIsLoadingInsights(false);
+    }
+  };
+
+  // If viewing the dashboard list
+  if (!currentDashboardId || !currentDashboard) {
+    return (
+      <>
+        <DashboardList
+          dashboards={dashboards}
+          onOpenDashboard={id => setCurrentDashboardId(id)}
+          onCreateNew={handleCreateNew}
+          onOpenTemplates={() => setIsTemplatesOpen(true)}
+          onOpenAiBuilder={() => setIsAiBuilderOpen(true)}
+          onDuplicate={handleDuplicate}
+          onDelete={handleDelete}
+          onRename={(id, name) => {
+            const next = prompt('Enter new dashboard name:', name);
+            if (next && next.trim()) {
+              DashboardService.renameDashboard(id, next.trim());
+              setDashboards(DashboardService.getDashboards());
+            }
+          }}
+        />
+
+        {/* Starter Templates Modal */}
+        <DashboardTemplatesModal
+          isOpen={isTemplatesOpen}
+          onClose={() => setIsTemplatesOpen(false)}
+          discoveredTables={discoveredTables}
+          onSelectTemplate={created => {
+            setDashboards(DashboardService.getDashboards());
+            setCurrentDashboardId(created.id);
+          }}
+        />
+
+        {/* AI Builder Modal */}
+        <DashboardAiBuilderModal
+          isOpen={isAiBuilderOpen}
+          onClose={() => setIsAiBuilderOpen(false)}
+          onApplyPlan={created => {
+            DashboardService.saveDashboard(created);
+            setDashboards(DashboardService.getDashboards());
+            setCurrentDashboardId(created.id);
+          }}
+          isConnected={isConnected}
+        />
+      </>
+    );
+  }
+
+  // Active Dashboard Canvas View
+  return (
+    <div
+      ref={canvasRef}
+      className={`flex-1 flex flex-col h-full bg-slate-950 overflow-hidden print:overflow-visible print:h-auto print:bg-white print:block ${
+        isPresentationMode ? 'fixed inset-0 z-50 p-4 bg-slate-950' : ''
+      }`}
+    >
+      {/* Canvas Top Bar */}
+      <div className="bg-slate-900 border-b border-slate-800 px-6 py-3 flex flex-wrap items-center justify-between gap-3 select-none flex-shrink-0 print:bg-white print:border-none print:px-0 print:py-4">
+        {/* Left: Back button & Title */}
+        <div className="flex items-center space-x-3 min-w-0">
+          {!isPresentationMode && (
+            <button
+              type="button"
+              onClick={() => setCurrentDashboardId(null)}
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors print:hidden"
+              title="Back to All Dashboards"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
+
+          <div className="min-w-0">
+            {isEditingTitle ? (
+              <div className="flex items-center space-x-1.5">
+                <input
+                  type="text"
+                  value={titleInput}
+                  onChange={e => setTitleInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleSaveTitle();
+                    if (e.key === 'Escape') setIsEditingTitle(false);
+                  }}
+                  autoFocus
+                  className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-0.5 text-sm font-bold text-white focus:outline-none focus:border-emerald-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveTitle}
+                  className="p-1 text-emerald-400 hover:text-emerald-300"
+                >
+                  <Check className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingTitle(false)}
+                  className="p-1 text-slate-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-2 group">
+                <h2 className="text-sm font-bold text-white tracking-tight truncate print:text-black print:text-xl">
+                  {currentDashboard.name}
+                </h2>
+                {!isPresentationMode && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingTitle(true)}
+                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-white transition-opacity print:hidden"
+                    title="Edit dashboard title"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {isEditingDesc ? (
+              <div className="flex items-center space-x-1 mt-0.5 print:hidden">
+                <input
+                  type="text"
+                  value={descInput}
+                  onChange={e => setDescInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleSaveDesc();
+                    if (e.key === 'Escape') setIsEditingDesc(false);
+                  }}
+                  autoFocus
+                  placeholder="Add a description..."
+                  className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500 w-64"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveDesc}
+                  className="p-0.5 text-emerald-400 hover:text-emerald-300"
+                >
+                  <Check className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingDesc(false)}
+                  className="p-0.5 text-slate-400 hover:text-white"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <p
+                onClick={() => !isPresentationMode && setIsEditingDesc(true)}
+                className="text-xs text-slate-400 truncate cursor-pointer hover:text-slate-300 transition-colors print:text-slate-600 print:text-sm"
+                title="Click to edit description"
+              >
+                {currentDashboard.description || 'Add an executive summary or description...'}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Actions */}
+        <div className="flex items-center space-x-2 print:hidden">
+          {/* Snapshot Badge */}
+          {isSnapshotMode ? (
+            <span className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30">
+              <Camera className="w-3.5 h-3.5 text-amber-400" />
+              <span>Snapshot — data not live</span>
+            </span>
+          ) : lastRefreshedAt ? (
+            <span className="hidden md:flex items-center space-x-1 text-[11px] text-slate-400">
+              <Clock className="w-3 h-3" />
+              <span>Updated at {lastRefreshedAt}</span>
+            </span>
+          ) : null}
+
+          {/* Refresh Dashboard Button */}
+          <button
+            type="button"
+            onClick={handleRefreshAll}
+            disabled={isRefreshingAll || isSnapshotMode}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 hover:text-white rounded-lg text-xs font-medium border border-slate-700/60 transition-colors"
+            title="Refresh all queries across this dashboard"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingAll ? 'animate-spin text-emerald-400' : ''}`} />
+            <span>{isRefreshingAll ? 'Refreshing...' : 'Refresh'}</span>
+          </button>
+
+          {/* Auto Refresh Dropdown */}
+          <select
+            value={autoRefreshInterval}
+            disabled={isSnapshotMode}
+            onChange={e => {
+              const val = Number(e.target.value);
+              setAutoRefreshInterval(val);
+              DashboardService.setAutoRefresh(currentDashboard.id, val);
+            }}
+            className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+            title="Auto-refresh interval"
+          >
+            <option value={0}>Auto-refresh: Off</option>
+            <option value={300}>Every 5 min</option>
+            <option value={900}>Every 15 min</option>
+            <option value={1800}>Every 30 min</option>
+            <option value={3600}>Every 60 min</option>
+          </select>
+
+          {/* Snapshot Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsSnapshotMode(prev => !prev)}
+            className={`p-1.5 rounded-lg border transition-colors ${
+              isSnapshotMode
+                ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                : 'bg-slate-800 border-slate-700/60 text-slate-400 hover:text-white'
+            }`}
+            title={isSnapshotMode ? 'Resume live query updates' : 'Freeze as snapshot'}
+          >
+            <Camera className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Insights Button */}
+          <button
+            type="button"
+            onClick={handleGenerateInsights}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-950/40 hover:bg-indigo-900/60 text-indigo-200 hover:text-white rounded-lg text-xs font-medium border border-indigo-800/60 transition-colors"
+            title="Derive factual cross-widget insights"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">Insights</span>
+          </button>
+
+          {/* Export Menu */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsExportMenuOpen(prev => !prev)}
+              className="flex items-center space-x-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-medium border border-slate-700/60 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Export</span>
+            </button>
+
+            {isExportMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-44 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1 z-30 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    DashboardExportService.printDashboardAsPdf();
+                    setIsExportMenuOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 flex items-center space-x-2"
+                >
+                  <FileText className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Print as PDF</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    DashboardExportService.exportAllWidgetsCsv(currentDashboard, widgetResults);
+                    setIsExportMenuOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 flex items-center space-x-2"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Export Data (CSV)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    DashboardExportService.exportDashboardJson(currentDashboard);
+                    setIsExportMenuOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-slate-200 hover:bg-slate-800 flex items-center space-x-2 border-t border-slate-800"
+                >
+                  <FileCode className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Export Config (JSON)</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Presentation Mode Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsPresentationMode(prev => !prev)}
+            className="p-1.5 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700/60 transition-colors"
+            title={isPresentationMode ? 'Exit Present Mode (Esc)' : 'Present Dashboard'}
+          >
+            {isPresentationMode ? (
+              <Minimize2 className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <Maximize2 className="w-3.5 h-3.5" />
+            )}
+          </button>
+
+          {/* Add Widget Button */}
+          {!isPresentationMode && (
+            <button
+              type="button"
+              onClick={() => setIsAddWidgetOpen(true)}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium transition-colors shadow-lg shadow-emerald-950"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Widget</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter Bar */}
+      <DashboardFilterBar
+        filters={currentDashboard.filters}
+        onUpdateFilter={handleUpdateFilter}
+        onAddFilter={handleAddFilter}
+        onRemoveFilter={handleRemoveFilter}
+        onClearAllFilters={handleClearAllFilters}
+        crossFilterActive={crossFilter}
+        onClearCrossFilter={() => setCrossFilter(null)}
+      />
+
+      {/* Responsive Widget Grid Canvas */}
+      <div className="flex-1 overflow-y-auto p-6 print:overflow-visible print:p-0 print:h-auto print:block">
+        {currentDashboard.widgets.length === 0 ? (
+          <div className="h-full border border-dashed border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400">
+              <BarChart3 className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold text-slate-200">This Dashboard is Empty</h4>
+              <p className="text-xs text-slate-400 max-w-sm mt-1">
+                Add widgets from your queries, build with AI, or launch a starter template.
+              </p>
+            </div>
+            <div className="flex items-center space-x-3">
+              <button
+                type="button"
+                onClick={() => setIsAddWidgetOpen(true)}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-medium transition-colors"
+              >
+                Add First Widget
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAiBuilderOpen(true)}
+                className="px-4 py-2 bg-purple-950/60 hover:bg-purple-900 text-purple-200 rounded-xl text-xs font-medium border border-purple-800/60 transition-colors"
+              >
+                Build with AI
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-12 gap-5 auto-rows-min">
+            {currentDashboard.widgets.map(widget => (
+              <DashboardWidgetCard
+                key={widget.id}
+                widget={widget}
+                result={widgetResults.get(widget.id)}
+                isLoading={refreshingWidgets.has(widget.id) || isRefreshingAll}
+                onRefreshWidget={handleRefreshWidget}
+                onRemoveWidget={handleRemoveWidget}
+                onResizeWidget={handleResizeWidget}
+                onMoveWidget={handleMoveWidget}
+                onEditQuery={sql => onNavigateToSqlEditor(sql)}
+                onRepairWidget={() => onNavigateToSqlEditor(widget.queryRef.sql)}
+                onCrossFilter={(col, val) => setCrossFilter({ column: col, value: val })}
+                isPresentationMode={isPresentationMode}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Add Widget Modal */}
+      <AddToDashboardModal
+        isOpen={isAddWidgetOpen}
+        onClose={() => setIsAddWidgetOpen(false)}
+        query={
+          discoveredTables.length > 0
+            ? `SELECT * FROM "${discoveredTables[0].schema}"."${discoveredTables[0].name}" LIMIT 50;`
+            : 'SELECT 1 AS metric;'
+        }
+        sourceTable={discoveredTables[0]?.name}
+        defaultTitle="New Dashboard Widget"
+        onSuccess={() => {
+          setDashboards(DashboardService.getDashboards());
+        }}
+      />
+
+      {/* Starter Templates Modal */}
+      <DashboardTemplatesModal
+        isOpen={isTemplatesOpen}
+        onClose={() => setIsTemplatesOpen(false)}
+        discoveredTables={discoveredTables}
+        onSelectTemplate={created => {
+          setDashboards(DashboardService.getDashboards());
+          setCurrentDashboardId(created.id);
+        }}
+      />
+
+      {/* AI Builder Modal */}
+      <DashboardAiBuilderModal
+        isOpen={isAiBuilderOpen}
+        onClose={() => setIsAiBuilderOpen(false)}
+        onApplyPlan={created => {
+          DashboardService.saveDashboard(created);
+          setDashboards(DashboardService.getDashboards());
+          setCurrentDashboardId(created.id);
+        }}
+        isConnected={isConnected}
+      />
+
+      {/* Insights Drawer */}
+      <DashboardInsightsDrawer
+        isOpen={isInsightsOpen}
+        onClose={() => setIsInsightsOpen(false)}
+        insights={insights}
+        isLoading={isLoadingInsights}
+        onRefresh={handleGenerateInsights}
+      />
+    </div>
+  );
+};

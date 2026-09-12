@@ -1,0 +1,142 @@
+import React from 'react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  LabelList
+} from 'recharts';
+import { ChartConfig } from '../../../types/visualization';
+import { ProcessedDataPoint, VisualizationDataProcessor } from '../../../services/visualizationDataProcessor';
+
+interface BarChartViewProps {
+  data: ProcessedDataPoint[];
+  config: ChartConfig;
+  isHorizontal?: boolean;
+}
+
+const PALETTE = [
+  '#6366f1', // Indigo
+  '#10b981', // Emerald
+  '#f59e0b', // Amber
+  '#ec4899', // Pink
+  '#06b6d4', // Cyan
+  '#8b5cf6', // Violet
+  '#f97316'  // Orange
+];
+
+export const BarChartView: React.FC<BarChartViewProps> = ({
+  data,
+  config,
+  isHorizontal = false
+}) => {
+  const measures = [config.yAxis, ...(config.secondaryMeasures || [])];
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-slate-900 border border-slate-700 shadow-xl rounded-lg p-3 text-xs">
+          <div className="font-semibold text-slate-200 mb-1.5 pb-1 border-b border-slate-800">
+            {label}
+          </div>
+          {payload.map((entry: any, idx: number) => (
+            <div key={`tip-${idx}`} className="flex items-center justify-between space-x-4 py-0.5">
+              <span className="flex items-center space-x-1.5 text-slate-400">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                <span>{entry.name}:</span>
+              </span>
+              <span className="font-mono font-medium text-slate-100">
+                {VisualizationDataProcessor.formatNumber(entry.value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div id="bar-chart-stage" className="w-full h-full min-h-[350px]">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart
+          data={data}
+          layout={isHorizontal ? 'vertical' : 'horizontal'}
+          margin={{ top: 20, right: 30, left: 20, bottom: 40 }}
+        >
+          {config.showGrid && (
+            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" opacity={0.6} />
+          )}
+
+          {isHorizontal ? (
+            <>
+              <XAxis
+                type="number"
+                stroke="#64748b"
+                tick={{ fill: '#94a3b8', fontSize: 11 }}
+                tickFormatter={val => VisualizationDataProcessor.formatNumber(val)}
+              />
+              <YAxis
+                type="category"
+                dataKey="xLabel"
+                stroke="#64748b"
+                tick={{ fill: '#94a3b8', fontSize: 11 }}
+                width={120}
+              />
+            </>
+          ) : (
+            <>
+              <XAxis
+                type="category"
+                dataKey="xLabel"
+                stroke="#64748b"
+                tick={{ fill: '#94a3b8', fontSize: 11 }}
+                angle={-25}
+                textAnchor="end"
+                height={50}
+              />
+              <YAxis
+                type="number"
+                stroke="#64748b"
+                tick={{ fill: '#94a3b8', fontSize: 11 }}
+                tickFormatter={val => VisualizationDataProcessor.formatNumber(val)}
+              />
+            </>
+          )}
+
+          <Tooltip content={<CustomTooltip />} />
+          {config.showLegend && <Legend wrapperStyle={{ paddingTop: 10, fontSize: 12 }} />}
+
+          {measures.map((mKey, idx) => {
+            const color = PALETTE[idx % PALETTE.length];
+            return (
+              <Bar
+                key={mKey}
+                dataKey={mKey}
+                name={mKey.replace(/_/g, ' ')}
+                fill={color}
+                radius={isHorizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+              >
+                {config.showDataLabels && (
+                  <LabelList
+                    dataKey={mKey}
+                    position={isHorizontal ? 'right' : 'top'}
+                    formatter={(val: any) =>
+                      typeof val === 'number' ? VisualizationDataProcessor.formatNumber(val) : ''
+                    }
+                    fill="#94a3b8"
+                    fontSize={10}
+                  />
+                )}
+              </Bar>
+            );
+          })}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
