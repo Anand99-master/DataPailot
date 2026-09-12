@@ -112,7 +112,8 @@ export class SchemaContextService {
       relationships,
       selectedTable,
       allTables.length,
-      allTables.length - relevantTables.length
+      allTables.length - relevantTables.length,
+      adapter.type
     );
 
     return {
@@ -224,12 +225,13 @@ export class SchemaContextService {
     relationships: DatabaseRelationship[],
     selectedTable?: { schema: string; name: string },
     totalTablesCount: number = tables.length,
-    omittedTablesCount: number = 0
+    omittedTablesCount: number = 0,
+    databaseType: string = 'unknown'
   ): string {
     const lines: string[] = [];
 
     lines.push('### VERIFIED DATABASE SCHEMA CONTEXT:');
-    lines.push('DIALECT: PostgreSQL');
+    lines.push(`DIALECT: ${databaseType}`);
     if (selectedTable) {
       lines.push(`ACTIVE_SELECTED_TABLE: "${selectedTable.schema}"."${selectedTable.name}"`);
     }

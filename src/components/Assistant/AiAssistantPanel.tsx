@@ -85,7 +85,7 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Status of Gemini AI configuration
-  const [aiStatus, setAiStatus] = useState<AiStatus>({ configured: true, model: 'gemini-3.8-flash' });
+  const [aiStatus, setAiStatus] = useState<AiStatus>({ configured: false, model: 'gemini-2.5-flash' });
   const [checkingStatus, setCheckingStatus] = useState(true);
 
   // Active chat conversation
@@ -104,6 +104,7 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
       })
       .catch(() => {
         if (mounted) {
+          setAiStatus({ configured: false, model: 'gemini-2.5-flash' });
           setCheckingStatus(false);
         }
       });
@@ -171,7 +172,7 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
     // Check if AI is configured
     if (!aiStatus.configured) {
       setPanelState('error');
-      setErrorMessage('AI service is not configured. Please set the GEMINI_API_KEY environment variable in Settings.');
+      setErrorMessage('AI service is not configured. Set GEMINI_API_KEY in the server .env file and restart DataPilot.');
       return;
     }
 
@@ -460,7 +461,7 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
             <span>AI Service Not Configured</span>
           </div>
           <p className="text-[11px] text-amber-200/80 leading-relaxed">
-            Please configure the server-side <code className="bg-amber-900/40 px-1 py-0.5 rounded text-amber-300 font-mono">GEMINI_API_KEY</code> in Settings &gt; Secrets.
+            Set the server-side <code className="bg-amber-900/40 px-1 py-0.5 rounded text-amber-300 font-mono">GEMINI_API_KEY</code> in <code className="font-mono">.env</code>, then restart DataPilot.
           </p>
           <p className="text-[10px] text-amber-400/80 mt-1">
             Note: Manual SQL editing, schema inspection, and database query execution continue working normally.
@@ -479,7 +480,7 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
                 <span>Ask your database in plain English</span>
               </div>
               <p className="text-[11px] text-indigo-200/80 leading-relaxed">
-                DataPilot AI inspects your live database schema, verified relationships, and table structures to generate read-only PostgreSQL queries.
+                DataPilot AI inspects your live database schema, verified relationships, and table structures to generate read-only SQL for the connected database.
               </p>
             </div>
 

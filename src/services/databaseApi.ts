@@ -159,7 +159,7 @@ export class DatabaseApiClient {
     const data = await this.handleResponse<{ success: boolean; configured: boolean; model: string }>(res);
     return {
       configured: Boolean(data.configured),
-      model: data.model || 'gemini-3.8-flash'
+      model: data.model || 'gemini-2.5-flash'
     };
   }
 

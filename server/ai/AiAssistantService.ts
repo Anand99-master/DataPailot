@@ -58,7 +58,7 @@ export interface FixSqlErrorResponse {
 
 export class AiAssistantService {
   /**
-   * Generates schema-aware PostgreSQL read-only query from natural language
+  * Generates schema-aware read-only SQL from natural language
    */
   public static async generateSql(request: SqlGenerationRequest): Promise<SqlGenerationResponse> {
     if (!isGeminiConfigured()) {
@@ -106,6 +106,7 @@ export class AiAssistantService {
       const prompt = this.buildSqlGenerationPrompt(
         request.question,
         schemaContext.formattedPromptContext,
+        schemaContext.databaseType,
         request.conversationHistory,
         retryFeedback
       );
@@ -204,7 +205,7 @@ export class AiAssistantService {
         understanding: parsed.understanding || request.question,
         sql: generatedSql,
         tablesUsed: Array.isArray(parsed.tablesUsed) ? parsed.tablesUsed : [],
-        explanation: parsed.explanation || 'Generated PostgreSQL query matching your question.',
+        explanation: parsed.explanation || 'Generated a read-only query matching your question.',
         assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions : [],
         warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
         validationPassed: true
@@ -222,6 +223,8 @@ export class AiAssistantService {
       throw new Error('AI service is not configured.');
     }
 
+    const adapter = ConnectionManager.getInstance().getAdapter(sessionId);
+    const dialect = adapter?.type || 'the connected database';
     const ai = getGeminiClient();
     if (!ai) throw new Error('AI client could not be initialized.');
 
@@ -232,7 +235,7 @@ export class AiAssistantService {
     }
 
     const prompt = `
-You are DataPilot AI, an expert PostgreSQL database analyst.
+You are DataPilot AI, an expert ${dialect} database analyst.
 Analyze the following SQL query and explain it clearly.
 
 SQL QUERY:
@@ -243,7 +246,7 @@ ${sql}
 Return a JSON object conforming to this exact structure:
 {
   "simpleExplanation": "Clear, plain-English explanation for a beginner or business user explaining what business question this answers and what the output shows.",
-  "technicalExplanation": "Detailed technical breakdown explaining the PostgreSQL query structure, execution mechanics, and optimization aspects.",
+  "technicalExplanation": "Detailed technical breakdown explaining the query structure, execution mechanics, and optimization aspects for the connected database dialect.",
   "tablesUsed": ["table1", "table2"],
   "joins": ["JOIN type and conditions, or 'None'"],
   "filters": ["WHERE/HAVING conditions applied, or 'None'"],
@@ -264,7 +267,7 @@ Return a JSON object conforming to this exact structure:
       const parsed = JSON.parse(response.text || '{}');
       return {
         simpleExplanation: parsed.simpleExplanation || 'This query extracts data from the database.',
-        technicalExplanation: parsed.technicalExplanation || 'Standard PostgreSQL query execution.',
+        technicalExplanation: parsed.technicalExplanation || 'Standard read-only query execution for the connected database.',
         tablesUsed: Array.isArray(parsed.tablesUsed) ? parsed.tablesUsed : [],
         joins: Array.isArray(parsed.joins) ? parsed.joins : [],
         filters: Array.isArray(parsed.filters) ? parsed.filters : [],
@@ -373,7 +376,7 @@ Return a JSON object conforming to this exact structure:
     if (!ai) throw new Error('AI client could not be initialized.');
 
     const prompt = `
-You are DataPilot AI, an expert PostgreSQL database analyst.
+  You are DataPilot AI, an expert ${schemaContext.databaseType} database analyst.
 A user query failed with an execution error. Fix the query using the VERIFIED DATABASE SCHEMA.
 
 ${schemaContext.formattedPromptContext}
@@ -443,6 +446,7 @@ Return a JSON object conforming to this exact structure:
   private static buildSqlGenerationPrompt(
     question: string,
     schemaText: string,
+    dialect: string,
     history?: { role: string; content: string; sql?: string }[],
     retryFeedback?: string
   ): string {
@@ -464,9 +468,18 @@ Return a JSON object conforming to this exact structure:
       retryText = `\n### CORRECTION FEEDBACK FROM PREVIOUS ATTEMPT:\n${retryFeedback}\n`;
     }
 
+    const dialectRules: Record<string, string> = {
+      postgresql: 'Use PostgreSQL syntax and LIMIT/OFFSET where appropriate.',
+      mysql: 'Use MySQL syntax and LIMIT/OFFSET where appropriate. Do not use PostgreSQL-only functions.',
+      sqlite: 'Use SQLite syntax and LIMIT/OFFSET where appropriate. Use SQLite-compatible date and string functions.',
+      sqlserver: 'Use SQL Server syntax. Use TOP for simple limits, or OFFSET/FETCH only with a deterministic ORDER BY.',
+      oracle: 'Use Oracle syntax. Use FETCH FIRST/OFFSET or an Oracle-compatible row limiting pattern; do not use LIMIT.'
+    };
+    const selectedDialectRules = dialectRules[dialect.toLowerCase()] || `Use syntax supported by ${dialect}.`;
+
     return `
-You are DataPilot AI, an expert PostgreSQL Data Analyst and Database Copilot.
-Convert the user's natural language question into an accurate, optimized, read-only PostgreSQL query.
+You are DataPilot AI, an expert ${dialect} Data Analyst and Database Copilot.
+Convert the user's natural language question into an accurate, optimized, read-only query for the connected ${dialect} database.
 
 ${schemaText}
 
@@ -480,11 +493,12 @@ CRITICAL SYSTEM INSTRUCTIONS:
    - NEVER invent table names, column names, relationships, or metrics.
    - If the user asks for a metric or concept (e.g. "churn", "growth", "revenue", "profit") and the required columns DO NOT exist in the database, set "sql": "" and state in "warnings": ["I cannot calculate this reliably because the connected database does not contain the required fields."].
 
-2. READ-ONLY POSTGRESQL SQL:
+2. READ-ONLY ${dialect.toUpperCase()} SQL:
    - Generate ONLY single-statement SELECT or WITH queries.
    - DO NOT generate INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, GRANT, REVOKE, CALL, DO, or multi-statement queries.
    - Always qualify column names with table name or table alias when joining multiple tables to avoid ambiguity.
-   - Use proper PostgreSQL functions: DATE_TRUNC, EXTRACT, COALESCE, NULLIF, ILIKE, etc.
+  - Use only syntax and functions supported by ${dialect}. Do not use PostgreSQL-only syntax for another dialect.
+  - DIALECT RULE: ${selectedDialectRules}
    - Apply reasonable LIMIT clauses (e.g., LIMIT 100) if user asks for top/bottom or large queries, unless aggregating.
 
 3. AMBIGUITY HANDLING:

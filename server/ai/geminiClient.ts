@@ -31,8 +31,8 @@ export function isGeminiConfigured(): boolean {
   return Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 0);
 }
 
-export const GEMINI_MODEL = 'gemini-3.6-flash';
-export const GEMINI_FALLBACK_MODEL = 'gemini-3.8-flash';
+export const GEMINI_MODEL = 'gemini-2.5-flash';
+export const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
 
 /**
  * Executes a Gemini model call with automatic fallback if primary model experiences 503 high demand spikes.
