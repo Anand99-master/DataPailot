@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { DatabaseExplorer } from './components/Sidebar/DatabaseExplorer';
 import { ConnectionModal } from './components/Sidebar/ConnectionModal';
 import { SqlEditor } from './components/Editor/SqlEditor';
@@ -54,6 +54,7 @@ export default function App() {
     isOpen: boolean;
     sqlQuery: string;
     sourceTable?: string;
+    datasetId?: string;
     chartType?: ChartType;
     chartConfig?: ChartConfig;
     cachedResult?: QueryResult;
@@ -62,6 +63,9 @@ export default function App() {
     isOpen: false,
     sqlQuery: ''
   });
+
+  // Active dataset state for Visualization and imported analytical workflows
+  const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null);
 
   // Dynamic schema discovery state
   const [tables, setTables] = useState<DiscoveredTable[]>([]);
@@ -73,6 +77,35 @@ export default function App() {
 
   // Performance Analyzer State
   const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);
+
+  // Active dataset computation
+  const activeDataset = useMemo(() => {
+    if (activeDatasetId) {
+      const found = importedDatasets.find(d => d.datasetId === activeDatasetId);
+      if (found) return found;
+    }
+    if (selectedTable?.schema === 'imported') {
+      const found = importedDatasets.find(d => d.tableName === selectedTable.name);
+      if (found) return found;
+    }
+    return importedDatasets.length > 0 ? importedDatasets[0] : null;
+  }, [importedDatasets, activeDatasetId, selectedTable]);
+
+  // Combined table discovery including imported SQLite datasets
+  const allDiscoveredTables = useMemo(() => {
+    const combined = [...tables];
+    for (const ds of importedDatasets) {
+      if (!combined.some(t => t.name === ds.tableName)) {
+        combined.push({
+          schema: 'imported',
+          name: ds.tableName,
+          type: 'TABLE' as const,
+          approximateRowCount: ds.rowCount
+        });
+      }
+    }
+    return combined;
+  }, [tables, importedDatasets]);
   const [currentPerformanceAnalysis, setCurrentPerformanceAnalysis] = useState<PerformanceAnalysis | null>(null);
   const [performanceHistory, setPerformanceHistory] = useState<PerformanceAnalysis[]>(() => {
     try {
@@ -460,6 +493,8 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
     await loadImportedDatasets();
     await loadTables();
 
+    setActiveDatasetId(dataset.datasetId);
+
     const importedTable: DiscoveredTable = {
       schema: 'imported',
       name: dataset.tableName,
@@ -750,10 +785,17 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
     });
   };
 
-  const handleAddToDashboardFromVis = (config: ChartConfig, res: QueryResult) => {
+  const handleAddToDashboardFromVis = (
+    config: ChartConfig,
+    res: QueryResult,
+    sourceTable?: string,
+    datasetId?: string
+  ) => {
     setAddToDashboardData({
       isOpen: true,
       sqlQuery: res.query || sqlQuery,
+      sourceTable: sourceTable || selectedTable?.name,
+      datasetId: datasetId || (selectedTable?.schema === 'imported' ? activeDataset?.datasetId : undefined),
       chartType: config.chartType,
       chartConfig: config,
       cachedResult: res,
@@ -937,6 +979,21 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
                 onOpenConnectModal={() => setIsConnectModalOpen(true)}
                 isAiConfigured={true}
                 onAddToDashboard={handleAddToDashboardFromVis}
+                importedDatasets={importedDatasets}
+                activeDataset={activeDataset}
+                onSelectDataset={ds => {
+                  setActiveDatasetId(ds.datasetId);
+                  handleSelectTable({
+                    schema: 'imported',
+                    name: ds.tableName,
+                    type: 'TABLE',
+                    approximateRowCount: ds.rowCount
+                  });
+                }}
+                onOpenImportModal={() => setIsImportModalOpen(true)}
+                selectedTable={selectedTable}
+                tables={tables}
+                onSelectTable={handleSelectTable}
               />
             
             ) : activeWorkspaceView === 'lineage' ? (
@@ -954,8 +1011,8 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
               />
             ) : (
               <DashboardWorkspace
-                discoveredTables={tables}
-                isConnected={Boolean(connection?.isConnected)}
+                discoveredTables={allDiscoveredTables}
+                isConnected={Boolean(connection?.isConnected) || importedDatasets.length > 0}
                 onNavigateToSqlEditor={handleNavigateToSqlEditorFromDashboard}
                 onNavigateToVisualization={handleNavigateToVisualizationFromDashboard}
                 onNavigateToAnalysis={handleNavigateToAnalysisFromDashboard}
@@ -994,6 +1051,7 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
         onClose={() => setAddToDashboardData(prev => ({ ...prev, isOpen: false }))}
         query={addToDashboardData.sqlQuery}
         sourceTable={addToDashboardData.sourceTable}
+        datasetId={addToDashboardData.datasetId}
         chartType={addToDashboardData.chartType}
         chartConfig={addToDashboardData.chartConfig}
         cachedResult={addToDashboardData.cachedResult}

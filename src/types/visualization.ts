@@ -56,6 +56,7 @@ export interface ChartRecommendation {
 }
 
 export type AggregationType = 'none' | 'sum' | 'avg' | 'min' | 'max' | 'count';
+export type ChartAggregation = AggregationType;
 export type SortOrder = 'none' | 'asc' | 'desc';
 export type ChartLimit = 'all' | 5 | 10 | 20 | 50;
 

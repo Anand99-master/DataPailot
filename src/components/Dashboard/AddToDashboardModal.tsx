@@ -20,6 +20,7 @@ interface AddToDashboardModalProps {
   onClose: () => void;
   query: string;
   sourceTable?: string;
+  datasetId?: string;
   chartType?: ChartType;
   chartConfig?: ChartConfig;
   cachedResult?: QueryResult;
@@ -32,6 +33,7 @@ export const AddToDashboardModal: React.FC<AddToDashboardModalProps> = ({
   onClose,
   query,
   sourceTable,
+  datasetId,
   chartType = 'bar',
   chartConfig,
   cachedResult,
@@ -96,7 +98,8 @@ export const AddToDashboardModal: React.FC<AddToDashboardModalProps> = ({
           sql: query,
           sourceTable,
           referencedTables,
-          referencedColumns: referencedCols
+          referencedColumns: referencedCols,
+          datasetId
         },
         chartConfig: chartConfig || {
           chartType: selectedChartType,

@@ -217,13 +217,19 @@ export class VisualizationDataProcessor {
       metricLabel: metricCol.replace(/_/g, ' ').toUpperCase()
     };
 
-    if (!rows || rows.length === 0 || !metricCol) return defaultRes;
+    if (!rows || rows.length === 0) return defaultRes;
 
     // Check if result has 1 row with current and previous columns
     const firstRow = rows[0];
+    const targetMetricCol = (metricCol && firstRow[metricCol] !== undefined)
+      ? metricCol
+      : Object.keys(firstRow).find(k => typeof firstRow[k] === 'number') || Object.keys(firstRow)[0];
+
+    if (!targetMetricCol) return defaultRes;
+
     const prevColCandidate = Object.keys(firstRow).find(
       k =>
-        k !== metricCol &&
+        k !== targetMetricCol &&
         (k.toLowerCase().includes('prev') ||
           k.toLowerCase().includes('prior') ||
           k.toLowerCase().includes('last') ||
@@ -234,14 +240,14 @@ export class VisualizationDataProcessor {
     let prevVal: number | null = null;
 
     if (prevColCandidate && firstRow[prevColCandidate] !== undefined) {
-      currentVal = this.parseNumeric(firstRow[metricCol]);
+      currentVal = this.parseNumeric(firstRow[targetMetricCol]);
       prevVal = this.parseNumeric(firstRow[prevColCandidate]);
     } else if (rows.length >= 2) {
       // 2 rows: row 0 is current, row 1 is previous
-      currentVal = this.parseNumeric(rows[0][metricCol]);
-      prevVal = this.parseNumeric(rows[1][metricCol]);
+      currentVal = this.parseNumeric(rows[0][targetMetricCol]);
+      prevVal = this.parseNumeric(rows[1][targetMetricCol]);
     } else {
-      currentVal = this.parseNumeric(firstRow[metricCol]);
+      currentVal = this.parseNumeric(firstRow[targetMetricCol]);
     }
 
     let change: number | null = null;

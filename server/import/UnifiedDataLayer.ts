@@ -332,7 +332,7 @@ export class UnifiedDataLayer {
     const maxRows = options.maxRows || 1000;
     
     // Adapt any "imported." prefix if user used qualify schema: "imported"."table" -> "table"
-    const normalizedSql = sql.replace(/(?:FROM|JOIN)\s+"?imported"?\."?([a-zA-Z0-9_]+)"?/gi, 'FROM "$1"');
+    const normalizedSql = sql.replace(/\b(FROM|JOIN)\s+"?imported"?\."?([a-zA-Z0-9_]+)"?/gi, '$1 "$2"');
 
     try {
       const stmt = store.db.prepare(normalizedSql);
@@ -342,12 +342,26 @@ export class UnifiedDataLayer {
       const isTruncated = rawRows.length > maxRows;
       const rows = isTruncated ? rawRows.slice(0, maxRows) : rawRows;
 
-      // Extract columns from first row if available, or empty
+      // Extract columns from rows with type inference
       const columnNames = rows.length > 0 ? Object.keys(rows[0]) : [];
-      const columns = columnNames.map(name => ({
-        name,
-        dataType: 'text' // General type descriptor
-      }));
+      const columns = columnNames.map(name => {
+        let dataType = 'text';
+        for (const r of rows) {
+          const val = r[name];
+          if (val !== null && val !== undefined) {
+            if (typeof val === 'number') {
+              dataType = Number.isInteger(val) ? 'integer' : 'numeric';
+            } else if (typeof val === 'boolean') {
+              dataType = 'boolean';
+            }
+            break;
+          }
+        }
+        return {
+          name,
+          dataType
+        };
+      });
 
       return {
         columns,

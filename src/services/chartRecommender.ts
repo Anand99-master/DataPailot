@@ -179,9 +179,9 @@ export class ChartRecommender {
 
     // KPI Card validation
     if (config.chartType === 'kpi') {
-      if (!yCol) {
+      if (!yCol && config.aggregation !== 'count') {
         errors.push('KPI Card requires a metric column.');
-      } else if (!yCol.isNumeric) {
+      } else if (yCol && !yCol.isNumeric && config.aggregation !== 'count') {
         errors.push(`KPI metric '${config.yAxis}' must be numeric (detected as ${yCol.semanticType}).`);
       }
       return { isValid: errors.length === 0, errors, warnings };
@@ -220,9 +220,9 @@ export class ChartRecommender {
       errors.push('Please select a dimension or category for the X-axis.');
     }
 
-    if (!yCol) {
+    if (!yCol && config.aggregation !== 'count') {
       errors.push('Please select a numeric measure for the Y-axis.');
-    } else if (!yCol.isNumeric) {
+    } else if (yCol && !yCol.isNumeric && config.aggregation !== 'count') {
       errors.push(`Measure column '${config.yAxis}' must be numeric (detected as ${yCol.semanticType}).`);
     }
 

@@ -12,6 +12,7 @@ import { runQueryLibraryTests } from './testQueryLibrary';
 import { runSqlSnippetsTests } from './testSqlSnippets';
 import { runPerformanceAnalyzerTests } from './testPerformanceAnalyzer';
 import { runImportWorkflowTests } from './testImportWorkflow';
+import { runVisualizationImportIntegrationTests } from './testVisualizationImportIntegration';
 
 console.log('\n============================================================');
 console.log('DATAPILOT PHASE 8: AUTOMATED TEST SUITE & REGRESSION MATRIX');
@@ -36,7 +37,8 @@ const suites: TestGroup[] = [
   { name: '3. SCHEMA GROUNDING & HALLUCINATION REJECTION', runner: runSchemaAndGroundingTests },
   { name: '4. DASHBOARD FILTERS & EXPORT SECURITY', runner: runDashboardAndFilterTests },
   { name: '12. PHASE 12 COMPREHENSIVE MATRIX', runner: runComprehensiveTestMatrix },
-  { name: '13. DATA IMPORT & UNIFIED DATA LAYER', runner: runImportWorkflowTests }
+  { name: '13. DATA IMPORT & UNIFIED DATA LAYER', runner: runImportWorkflowTests },
+  { name: '14. IMPORTED DATASET VISUALIZATION INTEGRATION', runner: runVisualizationImportIntegrationTests }
 ];
 
 async function runAll() {

@@ -28,6 +28,7 @@ export interface WidgetQueryReference {
   referencedTables?: string[];
   referencedColumns?: string[];
   analysisId?: string;
+  datasetId?: string;
 }
 
 export interface WidgetSize {

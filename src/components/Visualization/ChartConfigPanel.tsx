@@ -19,7 +19,8 @@ import {
   DetectedColumn,
   ChartValidationResult,
   ChartLimit,
-  SortOrder
+  SortOrder,
+  ChartAggregation
 } from '../../types/visualization';
 
 interface ChartConfigPanelProps {
@@ -217,6 +218,30 @@ export const ChartConfigPanel: React.FC<ChartConfigPanelProps> = ({
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+
+              {/* Aggregation Method */}
+              {config.chartType !== 'scatter' && config.chartType !== 'histogram' && (
+                <div>
+                  <label className="block text-slate-400 mb-1 text-[11px]">Aggregation</label>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(['count', 'sum', 'avg', 'min', 'max', 'none'] as ChartAggregation[]).map(agg => (
+                      <button
+                        key={agg}
+                        type="button"
+                        id={`btn-agg-${agg}`}
+                        onClick={() => onChangeConfig({ ...config, aggregation: agg })}
+                        className={`py-1 rounded text-center text-[11px] font-mono border transition-all ${
+                          config.aggregation === agg
+                            ? 'bg-indigo-600 border-indigo-500 text-white font-semibold'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {agg.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
