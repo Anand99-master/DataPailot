@@ -1,45 +1,67 @@
+# ==============================================================================
+# DATAPILOT DOCKER COMPOSE CONFIGURATION
+# Production-like local deployment stack with PostgreSQL & DataPilot
+# ==============================================================================
+
 version: '3.8'
 
 services:
   postgres:
     image: postgres:15-alpine
     container_name: datapilot_postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: datapilot_user
-      POSTGRES_PASSWORD: datapilot_secure_password_123
-      POSTGRES_DB: datapilot_db
+      POSTGRES_USER: ${POSTGRES_USER:-datapilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-datapilot_secure_password_change_in_prod}
+      POSTGRES_DB: ${POSTGRES_DB:-datapilot_prod}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U datapilot_user -d datapilot_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-datapilot} -d ${POSTGRES_DB:-datapilot_prod}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - datapilot_net
 
   datapilot:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: datapilot_app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - DATABASE_URL=postgresql://datapilot_user:datapilot_secure_password_123@postgres:5432/datapilot_db
-      - SESSION_SECRET=production_secure_session_secret_xyz_987
-      - APP_URL=http://localhost:3000
-    ports:
-      - "3000:3000"
+      - APP_URL=${APP_URL:-http://localhost:3000}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://datapilot:datapilot_secure_password_change_in_prod@postgres:5432/datapilot_prod}
+      - SESSION_SECRET=${SESSION_SECRET:-super_secret_session_key_change_in_production_12345}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-20}
+      - DB_CONNECTION_TIMEOUT=${DB_CONNECTION_TIMEOUT:-5000}
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
+      - JOB_CONCURRENCY=${JOB_CONCURRENCY:-5}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     depends_on:
       postgres:
         condition: service_healthy
-    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
+    networks:
+      - datapilot_net
 
 volumes:
   postgres_data:
+    driver: local
+
+networks:
+  datapilot_net:
+    driver: bridge

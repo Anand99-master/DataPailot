@@ -1,48 +1,67 @@
 # ==============================================================================
 # DATAPILOT PRODUCTION DOCKERFILE
-# Multi-stage build for optimal image size and security
+# Multi-stage build for secure, optimized production deployment
 # ==============================================================================
 
-# Stage 1: Build Frontend and Server Bundle
+# Stage 1: Build Stage
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+# Install build dependencies if needed (python, make, g++ for native modules)
+RUN apk add --no-cache python3 make g++
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install all dependencies (including devDependencies for building frontend/backend)
 RUN npm ci
 
+# Copy source files
 COPY . .
+
+# Build frontend and backend bundle
 RUN npm run build
 
-# Stage 2: Production Runtime
+# Stage 2: Production Runner Stage
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
+# Set production environment
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Create non-root user for security
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S datapilot -u 1001 -G nodejs
+# Install production runtime dependencies & sqlite support
+RUN apk add --no-cache curl
 
-# Copy package files and production dependencies
-COPY package.json package-lock.json ./
-RUN npm ci --only=production
+# Copy package files and install production dependencies only
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy built artifacts from builder
+# Copy built artifacts from builder stage
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/server.ts ./server.ts
 COPY --from=builder /app/server ./server
+COPY --from=builder /app/server.ts ./server.ts
+COPY --from=builder /app/index.html ./index.html
+COPY --from=builder /app/src ./src
 
-# Change ownership to non-root user
-RUN chown -R datapilot:nodejs /app
+# Copy entrypoint script
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 
-USER datapilot
+# Create data directory for local sqlite fallback with correct permissions
+RUN mkdir -p /app/data && chown -R node:node /app
 
+# Switch to non-root user
+USER node
+
+# Expose HTTP port
 EXPOSE 3000
 
+# Health check using readiness endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 http://localhost:3000/api/health/live || exit 1
+  CMD curl -f http://localhost:3000/api/health/ready || exit 1
 
-CMD ["node", "dist/server.cjs"]
+# Start via entrypoint script
+ENTRYPOINT ["./docker-entrypoint.sh"]
