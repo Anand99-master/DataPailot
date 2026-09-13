@@ -14,6 +14,7 @@ import { VisualizationWorkspace } from './components/Visualization/Visualization
 import { DashboardWorkspace } from './components/Dashboard/DashboardWorkspace';
 import { AddToDashboardModal } from './components/Dashboard/AddToDashboardModal';
 import { DataLineageWorkspace } from './components/Lineage/DataLineageWorkspace';
+import { DataQualityWorkspace } from './components/DataQuality/DataQualityWorkspace';
 import {
   DiscoveredTable, DatabaseRelationship,
   SanitizedConnectionInfo,
@@ -47,7 +48,7 @@ export default function App() {
   const [inspectingDataset, setInspectingDataset] = useState<ImportedDataset | null>(null);
 
   // Active workspace view: 'editor' | 'analysis' | 'visualization' | 'dashboards'
-  const [activeWorkspaceView, setActiveWorkspaceView] = useState<'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage'>('editor');
+  const [activeWorkspaceView, setActiveWorkspaceView] = useState<'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality'>('editor');
 
   // Add to Dashboard Modal State
   const [addToDashboardData, setAddToDashboardData] = useState<{
@@ -1010,6 +1011,13 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
                     setTableDetailsCache(prev => ({ ...prev, [`${schema}.${name}`]: details }));
                   } catch (e) {}
                 }}
+              />
+            ) : activeWorkspaceView === 'data-quality' ? (
+              <DataQualityWorkspace
+                selectedTable={selectedTable}
+                connection={connection}
+                tables={tables}
+                onSelectTable={handleSelectTable}
               />
             ) : (
               <DashboardWorkspace

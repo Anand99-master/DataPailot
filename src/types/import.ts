@@ -42,6 +42,32 @@ export interface ColumnProfile {
   latestDate?: string | null;
   numericDistribution?: NumericDistribution;
   sampleValues: unknown[];
+  
+  // Phase 14: Data Quality & Profiling 2.0
+  missingCount?: number;
+  missingPercentage?: number;
+  emptyStringCount?: number;
+  whitespaceCount?: number;
+  duplicateCount?: number;
+  duplicatePercentage?: number;
+  outlierCount?: number;
+  outlierPercentage?: number;
+  typeConsistencyPercentage?: number;
+  invalidDateCount?: number;
+  futureDateCount?: number;
+  zeroCount?: number;
+  negativeCount?: number;
+  qualityStatus?: 'Good' | 'Warning' | 'Critical';
+}
+
+export interface QualityIssue {
+  severity: 'Critical' | 'Warning' | 'Info';
+  column: string;
+  issue: string;
+  affectedRowCount: number;
+  affectedPercentage: number;
+  recommendedAction: string;
+  sampleValues?: unknown[];
 }
 
 export interface DataProfile {
@@ -51,6 +77,13 @@ export interface DataProfile {
   totalColumns: number;
   profiledAt: string;
   columns: Record<string, ColumnProfile>;
+  
+  // Phase 14: Data Quality & Profiling 2.0
+  overallQualityScore?: number;
+  qualityScoreCategory?: 'Excellent' | 'Good' | 'Fair' | 'Poor';
+  issues?: QualityIssue[];
+  duplicateRowCount?: number;
+  duplicateRowPercentage?: number;
 }
 
 export interface DataPreview {

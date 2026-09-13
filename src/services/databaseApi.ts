@@ -67,6 +67,12 @@ export class DatabaseApiClient {
     return data.table;
   }
 
+  public static async getDataQualityProfile(schema: string, tableName: string): Promise<any> {
+    const res = await fetch(`/api/quality/profile/${encodeURIComponent(schema)}/${encodeURIComponent(tableName)}`);
+    const data = await this.handleResponse<{ success: boolean; profile: any }>(res);
+    return data.profile;
+  }
+
   public static async refreshSchema(schema?: string): Promise<{
     tables: DiscoveredTable[];
     relationships: DatabaseRelationship[];

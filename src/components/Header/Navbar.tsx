@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, Sparkles, Shield, Terminal, LogOut, RefreshCw, Code2, BarChart3, PieChart, LayoutDashboard, Upload } from 'lucide-react';
+import { Database, Sparkles, Shield, Terminal, LogOut, RefreshCw, Code2, BarChart3, PieChart, LayoutDashboard, Upload, ShieldAlert } from 'lucide-react';
 import { SanitizedConnectionInfo } from '../../types/database';
 
 interface NavbarProps {
@@ -11,8 +11,8 @@ interface NavbarProps {
   isRefreshing: boolean;
   isAiPanelOpen: boolean;
   onToggleAiPanel: () => void;
-  activeView?: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage';
-  onViewChange?: (view: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage') => void;
+  activeView?: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality';
+  onViewChange?: (view: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality') => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -149,7 +149,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button
             id="tab-btn-dashboards"
-            onClick={() => onViewChange('dashboards')}
+            onClick={() => onViewChange && onViewChange('dashboards')}
             className={`flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
               activeView === 'dashboards'
                 ? 'bg-emerald-600 text-white shadow-sm'
@@ -158,6 +158,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <LayoutDashboard className="w-3.5 h-3.5 text-emerald-300" />
             <span>Dashboards</span>
+          </button>
+
+          <button
+            id="tab-btn-data-quality"
+            onClick={() => onViewChange && onViewChange('data-quality')}
+            className={`flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+              activeView === 'data-quality'
+                ? 'bg-rose-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-rose-300" />
+            <span>Data Quality</span>
           </button>
         </div>
       )}
