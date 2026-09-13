@@ -9,6 +9,7 @@ import { queryRoutes } from './server/api/queryRoutes';
 import { aiRoutes } from './server/api/aiRoutes';
 import { importRoutes } from './server/api/importRoutes';
 import { qualityRoutes } from './server/api/qualityRoutes';
+import { cleaningRoutes } from './server/api/cleaningRoutes';
 import { isGeminiConfigured, GEMINI_MODEL } from './server/ai/geminiClient';
 import { ConnectionManager } from './server/database/ConnectionManager';
 import { Logger } from './server/utils/logger';
@@ -78,6 +79,7 @@ async function startServer() {
   app.use('/api/database', queryRoutes);
   app.use('/api/database', aiRoutes);
   app.use('/api/quality', qualityRoutes);
+  app.use('/api/cleaning', cleaningRoutes);
   app.use('/api/import', importRoutes);
   app.use('/api/database/import', importRoutes);
 

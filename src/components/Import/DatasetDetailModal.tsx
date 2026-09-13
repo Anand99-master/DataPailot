@@ -14,7 +14,8 @@ import {
   Eye,
   RefreshCw,
   Sparkles,
-  Info
+  Info,
+  Wand2
 } from 'lucide-react';
 import { ImportedDataset, ExportFormat } from '../../types/import';
 import { ImportApiClient } from '../../services/importApi';
@@ -26,6 +27,7 @@ interface DatasetDetailModalProps {
   onDatasetDeleted: (datasetId: string) => void;
   onDatasetRenamed: (dataset: ImportedDataset) => void;
   onAnalyzeDataset?: (dataset: ImportedDataset) => void;
+  onCleanDataset?: (dataset: ImportedDataset) => void;
 }
 
 export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
@@ -34,7 +36,8 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
   onClose,
   onDatasetDeleted,
   onDatasetRenamed,
-  onAnalyzeDataset
+  onAnalyzeDataset,
+  onCleanDataset
 }) => {
   const [activeTab, setActiveTab] = useState<'preview' | 'profile'>('preview');
   const [isEditingName, setIsEditingName] = useState(false);
@@ -189,6 +192,20 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
                 JSON
               </button>
             </div>
+
+            {onCleanDataset && (
+              <button
+                onClick={() => {
+                  onCleanDataset(dataset);
+                  onClose();
+                }}
+                className="px-3 py-1.5 text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg flex items-center gap-1.5 shadow-sm transition-colors"
+                title="Open Data Cleaning Workspace"
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+                <span>Clean & Transform</span>
+              </button>
+            )}
 
             {onAnalyzeDataset && (
               <button

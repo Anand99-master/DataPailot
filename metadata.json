@@ -1,6 +1,6 @@
 {
   "name": "DataPilot — AI Data Analysis Workspace",
-  "description": "Professional SQL data analysis and intelligent data visualization workspace with schema exploration, analysis toolkit, and factual AI insights.",
+  "description": "Professional SQL data analysis, data cleaning & transformation workspace, intelligent data visualization, and factual AI insights.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

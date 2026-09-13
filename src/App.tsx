@@ -15,6 +15,7 @@ import { DashboardWorkspace } from './components/Dashboard/DashboardWorkspace';
 import { AddToDashboardModal } from './components/Dashboard/AddToDashboardModal';
 import { DataLineageWorkspace } from './components/Lineage/DataLineageWorkspace';
 import { DataQualityWorkspace } from './components/DataQuality/DataQualityWorkspace';
+import { DataCleaningWorkspace } from './components/DataCleaning/DataCleaningWorkspace';
 import {
   DiscoveredTable, DatabaseRelationship,
   SanitizedConnectionInfo,
@@ -47,8 +48,8 @@ export default function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [inspectingDataset, setInspectingDataset] = useState<ImportedDataset | null>(null);
 
-  // Active workspace view: 'editor' | 'analysis' | 'visualization' | 'dashboards'
-  const [activeWorkspaceView, setActiveWorkspaceView] = useState<'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality'>('editor');
+  // Active workspace view: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality' | 'cleaning'
+  const [activeWorkspaceView, setActiveWorkspaceView] = useState<'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality' | 'cleaning'>('editor');
 
   // Add to Dashboard Modal State
   const [addToDashboardData, setAddToDashboardData] = useState<{
@@ -873,6 +874,10 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
           onOpenConnectModal={() => setIsConnectModalOpen(true)}
           onOpenImportModal={() => setIsImportModalOpen(true)}
           onInspectDataset={ds => setInspectingDataset(ds)}
+          onCleanDataset={ds => {
+            setActiveDatasetId(ds.datasetId);
+            setActiveWorkspaceView('cleaning');
+          }}
           onDisconnect={handleDisconnect}
           onInsertColumnToQuery={handleInsertColumnToQuery}
         />
@@ -1028,6 +1033,30 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
                 activeDatasetId={activeDatasetId}
                 dataset={activeDataset}
               />
+            ) : activeWorkspaceView === 'cleaning' ? (
+              <DataCleaningWorkspace
+                dataset={activeDataset}
+                allDatasets={importedDatasets}
+                onSelectDataset={ds => {
+                  setActiveDatasetId(ds.datasetId);
+                  handleSelectTable({
+                    schema: 'imported',
+                    name: ds.tableName,
+                    type: 'TABLE',
+                    approximateRowCount: ds.rowCount
+                  });
+                }}
+                onDatasetCreated={newDs => {
+                  setImportedDatasets(prev => [newDs, ...prev]);
+                  setActiveDatasetId(newDs.datasetId);
+                  handleSelectTable({
+                    schema: 'imported',
+                    name: newDs.tableName,
+                    type: 'TABLE',
+                    approximateRowCount: newDs.rowCount
+                  });
+                }}
+              />
             ) : (
               <DashboardWorkspace
                 discoveredTables={allDiscoveredTables}
@@ -1137,6 +1166,10 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
         onClose={() => setInspectingDataset(null)}
         onDatasetDeleted={handleDeleteDataset}
         onDatasetRenamed={handleRenameDataset}
+        onCleanDataset={ds => {
+          setActiveDatasetId(ds.datasetId);
+          setActiveWorkspaceView('cleaning');
+        }}
         onAnalyzeDataset={ds => {
           const importedTable: DiscoveredTable = {
             schema: 'imported',

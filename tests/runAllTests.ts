@@ -16,6 +16,7 @@ import { runVisualizationImportIntegrationTests } from './testVisualizationImpor
 import { runExcelExportTests } from './testExcelExport';
 import { runDataQualityTests } from './testDataQuality';
 import { runDataQualitySelectionTests } from './testDataQualitySelection';
+import { runDataTransformation15_2Tests } from './testDataTransformation15_2';
 
 console.log('\n============================================================');
 console.log('DATAPILOT PHASE 8: AUTOMATED TEST SUITE & REGRESSION MATRIX');
@@ -44,7 +45,8 @@ const suites: TestGroup[] = [
   { name: '14. IMPORTED DATASET VISUALIZATION INTEGRATION', runner: runVisualizationImportIntegrationTests },
   { name: '15. EXCEL (XLSX) QUERY RESULT EXPORT', runner: runExcelExportTests },
   { name: '16. DATA QUALITY & PROFILING 2.0', runner: runDataQualityTests },
-  { name: '17. DATA QUALITY WORKSPACE SELECTION', runner: runDataQualitySelectionTests }
+  { name: '17. DATA QUALITY WORKSPACE SELECTION', runner: runDataQualitySelectionTests },
+  { name: '18. ADVANCED DATA TRANSFORMATION WORKSPACE (15.2)', runner: runDataTransformation15_2Tests }
 ];
 
 async function runAll() {

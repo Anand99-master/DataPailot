@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, Sparkles, Shield, Terminal, LogOut, RefreshCw, Code2, BarChart3, PieChart, LayoutDashboard, Upload, ShieldAlert } from 'lucide-react';
+import { Database, Sparkles, Shield, Terminal, LogOut, RefreshCw, Code2, BarChart3, PieChart, LayoutDashboard, Upload, ShieldAlert, Wand2 } from 'lucide-react';
 import { SanitizedConnectionInfo } from '../../types/database';
 
 interface NavbarProps {
@@ -11,8 +11,8 @@ interface NavbarProps {
   isRefreshing: boolean;
   isAiPanelOpen: boolean;
   onToggleAiPanel: () => void;
-  activeView?: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality';
-  onViewChange?: (view: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality') => void;
+  activeView?: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality' | 'cleaning';
+  onViewChange?: (view: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality' | 'cleaning') => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -171,6 +171,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <ShieldAlert className="w-3.5 h-3.5 text-rose-300" />
             <span>Data Quality</span>
+          </button>
+
+          <button
+            id="tab-btn-cleaning"
+            onClick={() => onViewChange && onViewChange('cleaning')}
+            className={`flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+              activeView === 'cleaning'
+                ? 'bg-cyan-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Wand2 className="w-3.5 h-3.5 text-cyan-300" />
+            <span>Data Cleaning</span>
           </button>
         </div>
       )}

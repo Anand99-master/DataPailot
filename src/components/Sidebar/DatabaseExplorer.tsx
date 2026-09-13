@@ -18,7 +18,8 @@ import {
   FileText,
   FileCode,
   Upload,
-  Sparkles
+  Sparkles,
+  Wand2
 } from 'lucide-react';
 import {
   DiscoveredTable,
@@ -42,6 +43,7 @@ interface DatabaseExplorerProps {
   onOpenConnectModal: () => void;
   onOpenImportModal?: () => void;
   onInspectDataset?: (dataset: ImportedDataset) => void;
+  onCleanDataset?: (dataset: ImportedDataset) => void;
   onDisconnect: () => void;
   onInsertColumnToQuery: (columnIdentifier: string) => void;
   selectedSchema?: string;
@@ -62,6 +64,7 @@ export const DatabaseExplorer: React.FC<DatabaseExplorerProps> = ({
   onOpenConnectModal,
   onOpenImportModal,
   onInspectDataset,
+  onCleanDataset,
   onDisconnect,
   onInsertColumnToQuery
 }) => {
@@ -285,7 +288,19 @@ export const DatabaseExplorer: React.FC<DatabaseExplorerProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-1.5 flex-shrink-0">
+                    <div className="flex items-center space-x-1 flex-shrink-0">
+                      {onCleanDataset && (
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            onCleanDataset(ds);
+                          }}
+                          className="p-1 rounded text-cyan-400 hover:text-cyan-300 hover:bg-cyan-950/40 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Open Data Cleaning Workspace"
+                        >
+                          <Wand2 className="w-3 h-3" />
+                        </button>
+                      )}
                       {onInspectDataset && (
                         <button
                           onClick={e => {
