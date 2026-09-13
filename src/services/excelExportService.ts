@@ -17,6 +17,70 @@ export interface ExportExcelResult {
  * Service for securely generating and exporting query results as professional Excel (.xlsx) workbooks.
  */
 export class ExcelExportService {
+  public static exportMultiSheetExcel(
+    sheets: { sheetName: string; columns: any[]; rows: any[] }[],
+    options: { filename?: string; sourceName?: string } = {}
+  ): ExportExcelResult {
+    const filename = options.filename
+      ? (options.filename.endsWith('.xlsx') ? options.filename : `${options.filename}.xlsx`)
+      : this.generateExcelFilename(options.sourceName);
+
+    const workbook = XLSX.utils.book_new();
+    let totalRowCount = 0;
+    let totalColCount = 0;
+
+    sheets.forEach((sheet, idx) => {
+      const sanitizedSheetName = this.sanitizeSheetName(sheet.sheetName) || `Sheet${idx + 1}`;
+      const headerRow = sheet.columns.map(c => c.name || c.columnName || String(c));
+      const bodyRows = sheet.rows.map(row => 
+        sheet.columns.map(col => {
+          const key = col.name || col.columnName || String(col);
+          return this.sanitizeCellForExcel(row[key]);
+        })
+      );
+
+      const worksheetData = [headerRow, ...bodyRows];
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+      
+      const colWidths = sheet.columns.map((col, cIdx) => {
+        let maxLen = (col.name || col.columnName || String(col)).length;
+        for (let rIdx = 0; rIdx < bodyRows.length; rIdx++) {
+          if (maxLen >= 60) break;
+          const cellStr = String(bodyRows[rIdx][cIdx] || '');
+          if (cellStr.length > maxLen) {
+            maxLen = Math.min(cellStr.length, 60);
+          }
+        }
+        return { wch: Math.max(maxLen + 2, 8) };
+      });
+      worksheet['!cols'] = colWidths;
+      
+      XLSX.utils.book_append_sheet(workbook, worksheet, sanitizedSheetName);
+      
+      totalRowCount += sheet.rows.length;
+      totalColCount += sheet.columns.length;
+    });
+
+    const arrayBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const buffer = new Uint8Array(arrayBuffer);
+
+    return {
+      buffer,
+      filename,
+      rowCount: totalRowCount,
+      columnCount: totalColCount
+    };
+  }
+
+  /**
+   * Sanitizes sheet names to Excel constraints (max 31 chars, no invalid chars).
+   */
+  private static sanitizeSheetName(name: string): string {
+    if (!name) return '';
+    const clean = name.replace(/[\\/?*\[\]]/g, '').trim();
+    return clean.substring(0, 31);
+  }
+
   /**
    * Spreadsheet Formula Injection Protection (CWE-1236)
    * Values beginning with =, +, -, @, \t, or \r are prefixed with a single quote

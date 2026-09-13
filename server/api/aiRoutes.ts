@@ -198,6 +198,29 @@ aiRoutes.post('/ai/generate-dashboard', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/database/ai/data-quality-recommendations
+ * Generates AI data quality recommendations based on a profile summary
+ */
+aiRoutes.post('/ai/data-quality-recommendations', async (req: Request, res: Response) => {
+  try {
+    const { summary } = req.body;
+
+    if (!summary) {
+      ApiResponse.error(res, 400, 'INVALID_INPUT', 'Profile summary is required.');
+      return;
+    }
+
+    const result = await AiAssistantService.generateDataQualityRecommendations(summary);
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (err: any) {
+    Logger.error('AI data quality recommendations failed', err);
+    ApiResponse.error(res, 400, 'AI_DQ_FAILED', err.message || 'Failed to generate recommendations.');
+  }
+});
+/**
  * POST /api/database/ai/dashboard-insights
  * Generates factual cross-widget insights based on actual displayed metrics
  */

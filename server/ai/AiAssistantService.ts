@@ -215,6 +215,36 @@ export class AiAssistantService {
     throw new Error('Could not generate a valid query matching the database schema.');
   }
 
+  public static async generateDataQualityRecommendations(summary: any): Promise<string> {
+    if (!isGeminiConfigured()) {
+      throw new Error('AI service is not configured.');
+    }
+
+    const ai = getGeminiClient();
+    if (!ai) throw new Error('AI client could not be initialized.');
+
+    const prompt = `
+You are DataPilot AI, an expert Data Quality and Data Engineering analyst.
+Analyze the following Data Quality profile summary and provide 3-5 specific, actionable recommendations for data cleanup, schema optimization, or business logic improvements.
+Provide your response in clean markdown format, using bullet points. Do not mention that you are an AI or repeat the prompt.
+
+Data Quality Summary:
+${JSON.stringify(summary, null, 2)}
+`;
+
+    try {
+      const result = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt
+      });
+
+      return result.text || 'No recommendations generated.';
+    } catch (error: any) {
+      Logger.error('Failed to generate Data Quality recommendations', error);
+      throw new Error('AI generation failed.');
+    }
+  }
+
   /**
    * Explains SQL query in both simple and technical terms
    */
