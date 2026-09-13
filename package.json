@@ -17,7 +17,11 @@
     "test:schema": "tsx tests/testSchemaAndGrounding.ts",
     "test:lineage": "tsx tests/testDataLineage.ts",
     "test:analysis": "tsx tests/testDashboardAndFilters.ts",
-    "test:all": "tsx tests/runAllTests.ts"
+    "test:all": "tsx tests/runAllTests.ts",
+    "migrate:up": "tsx server/migrations/cli.ts up",
+    "migrate:down": "tsx server/migrations/cli.ts down",
+    "migrate:status": "tsx server/migrations/cli.ts status",
+    "migrate:validate": "tsx server/migrations/cli.ts validate"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
