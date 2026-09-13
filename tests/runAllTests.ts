@@ -13,6 +13,7 @@ import { runSqlSnippetsTests } from './testSqlSnippets';
 import { runPerformanceAnalyzerTests } from './testPerformanceAnalyzer';
 import { runImportWorkflowTests } from './testImportWorkflow';
 import { runVisualizationImportIntegrationTests } from './testVisualizationImportIntegration';
+import { runExcelExportTests } from './testExcelExport';
 
 console.log('\n============================================================');
 console.log('DATAPILOT PHASE 8: AUTOMATED TEST SUITE & REGRESSION MATRIX');
@@ -38,7 +39,8 @@ const suites: TestGroup[] = [
   { name: '4. DASHBOARD FILTERS & EXPORT SECURITY', runner: runDashboardAndFilterTests },
   { name: '12. PHASE 12 COMPREHENSIVE MATRIX', runner: runComprehensiveTestMatrix },
   { name: '13. DATA IMPORT & UNIFIED DATA LAYER', runner: runImportWorkflowTests },
-  { name: '14. IMPORTED DATASET VISUALIZATION INTEGRATION', runner: runVisualizationImportIntegrationTests }
+  { name: '14. IMPORTED DATASET VISUALIZATION INTEGRATION', runner: runVisualizationImportIntegrationTests },
+  { name: '15. EXCEL (XLSX) QUERY RESULT EXPORT', runner: runExcelExportTests }
 ];
 
 async function runAll() {

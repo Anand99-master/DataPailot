@@ -930,6 +930,7 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
                     onFixSqlError={handleFixSqlError}
                     onNavigateToVisualization={() => setActiveWorkspaceView('visualization')}
                     onAddToDashboard={handleAddToDashboardFromResults}
+                    sourceName={selectedTable?.name}
                   />
                 </div>
               </>
@@ -968,6 +969,7 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
                       onFixSqlError={handleFixSqlError}
                       onNavigateToVisualization={() => setActiveWorkspaceView('visualization')}
                       onAddToDashboard={handleAddToDashboardFromResults}
+                      sourceName={selectedTable?.name}
                     />
                   </div>
                 )}

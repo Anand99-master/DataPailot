@@ -13,9 +13,11 @@ import {
   XCircle,
   Sparkles,
   PieChart,
-  LayoutDashboard
+  LayoutDashboard,
+  FileSpreadsheet
 } from 'lucide-react';
 import { QueryExecutionResult } from '../../types/database';
+import { ExcelExportService } from '../../services/excelExportService';
 
 interface QueryResultsProps {
   result: QueryExecutionResult | null;
@@ -25,6 +27,7 @@ interface QueryResultsProps {
   onFixSqlError?: (failedSql: string, errorMessage: string) => void;
   onNavigateToVisualization?: () => void;
   onAddToDashboard?: (result: QueryExecutionResult) => void;
+  sourceName?: string;
 }
 
 export const QueryResults: React.FC<QueryResultsProps> = ({
@@ -34,11 +37,14 @@ export const QueryResults: React.FC<QueryResultsProps> = ({
   onExplainResults,
   onFixSqlError,
   onNavigateToVisualization,
-  onAddToDashboard
+  onAddToDashboard,
+  sourceName
 }) => {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [copied, setCopied] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const handleSort = (colName: string) => {
     if (sortColumn === colName) {
@@ -82,6 +88,27 @@ export const QueryResults: React.FC<QueryResultsProps> = ({
     a.download = `query_result_${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const exportExcel = () => {
+    if (!result?.rows || !result.columns || result.rows.length === 0) return;
+    setIsExportingExcel(true);
+    setExportError(null);
+    try {
+      const tableSource = sourceName || ExcelExportService.extractTableFromSql(result.query);
+      const filename = ExcelExportService.generateExcelFilename(tableSource || undefined);
+      ExcelExportService.exportQueryResultToExcel(result.columns, result.rows, {
+        filename,
+        sourceName: tableSource || undefined,
+        sheetName: tableSource || 'Query Results'
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to export query results to Excel.';
+      console.error('Failed to export Excel file:', err);
+      setExportError(msg);
+    } finally {
+      setIsExportingExcel(false);
+    }
   };
 
   // Sort rows if sorted column is active
@@ -187,9 +214,43 @@ export const QueryResults: React.FC<QueryResultsProps> = ({
               <Download className="w-3.5 h-3.5" />
               <span>CSV</span>
             </button>
+            <button
+              id="btn-export-excel"
+              onClick={exportExcel}
+              disabled={isExportingExcel}
+              className="flex items-center space-x-1 px-2.5 py-1 text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700/80 rounded border border-slate-700/60 transition-colors disabled:opacity-50"
+              title="Export result as Excel (.xlsx)"
+            >
+              {isExportingExcel ? (
+                <div className="w-3.5 h-3.5 border-2 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
+              ) : (
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+              )}
+              <span>Excel</span>
+            </button>
           </div>
         )}
       </div>
+
+      {/* Excel Export Error Alert Banner */}
+      {exportError && (
+        <div
+          id="export-excel-error-banner"
+          className="px-4 py-1.5 bg-rose-950/60 border-b border-rose-900/60 text-[11px] text-rose-300 flex items-center justify-between select-none"
+        >
+          <div className="flex items-center space-x-1.5 truncate">
+            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
+            <span className="truncate">Excel Export Failed: {exportError}</span>
+          </div>
+          <button
+            onClick={() => setExportError(null)}
+            className="text-rose-400 hover:text-rose-200 text-xs px-1 font-semibold ml-2"
+            title="Dismiss error"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Large Result Truncation Banner */}
       {result && result.status === 'success' && result.isTruncated && (
