@@ -18,6 +18,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -27,6 +28,22 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
       setResults([]);
     }
   }, [isOpen]);
+
+  // Handle ESC key press to close modal
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -53,6 +70,12 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === backdropRef.current) {
+      onClose();
+    }
+  };
+
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'query':
@@ -71,9 +94,20 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl w-full max-w-xl overflow-hidden text-slate-100 flex flex-col">
-        {/* Search Input */}
+    <div
+      ref={backdropRef}
+      id="global-search-backdrop"
+      onClick={handleBackdropClick}
+      className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Global Workspace Search"
+        onClick={e => e.stopPropagation()}
+        className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl w-full max-w-xl overflow-hidden text-slate-100 flex flex-col"
+      >
+        {/* Search Input Header */}
         <div className="flex items-center px-4 py-3 border-b border-slate-800 bg-slate-950/60">
           <Search className="w-5 h-5 text-slate-400 mr-3 flex-shrink-0" />
           <input
@@ -83,18 +117,45 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
             onChange={e => setQuery(e.target.value)}
             placeholder="Search queries, dashboards, reports, datasets, projects..."
             className="w-full bg-transparent text-sm text-slate-200 placeholder-slate-500 focus:outline-hidden"
+            aria-label="Search queries, dashboards, reports, datasets, projects"
           />
+
+          {/* Clear Query Button (only when text is present) */}
           {query && (
             <button
-              onClick={() => setQuery('')}
-              className="p-1 text-slate-400 hover:text-white mr-2"
+              type="button"
+              onClick={() => {
+                setQuery('');
+                inputRef.current?.focus();
+              }}
+              className="p-1 rounded text-slate-500 hover:text-slate-300 transition-colors mr-2 flex-shrink-0"
+              title="Clear search query"
+              aria-label="Clear search input"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
-          <kbd className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-mono bg-slate-800 text-slate-400 rounded border border-slate-700">
+
+          {/* ESC badge */}
+          <kbd
+            onClick={onClose}
+            title="Press ESC to close"
+            className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-mono bg-slate-800 text-slate-400 rounded border border-slate-700 select-none cursor-pointer hover:bg-slate-750 hover:text-slate-300 transition-colors mr-1 flex-shrink-0"
+          >
             ESC
           </kbd>
+
+          {/* Dedicated Close Button */}
+          <button
+            id="btn-close-global-search"
+            type="button"
+            onClick={onClose}
+            aria-label="Close search"
+            title="Close search"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 focus:outline-hidden focus:ring-1 focus:ring-slate-600 transition-colors flex-shrink-0 ml-1"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Results Box */}

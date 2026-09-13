@@ -102,7 +102,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header
       id="workspace-navbar"
-      className="h-12 max-h-12 min-h-12 border-b border-slate-800 bg-slate-900/95 flex items-center justify-between px-2.5 text-slate-200 select-none z-20 flex-shrink-0 w-full overflow-hidden"
+      className="h-12 max-h-12 min-h-12 border-b border-slate-800 bg-slate-900/95 flex items-center justify-between px-2.5 text-slate-200 select-none z-30 flex-shrink-0 w-full"
     >
       {/* Left: Breadcrumbs & Workspace Switcher & Connection */}
       <div className="flex items-center space-x-1.5 md:space-x-2 min-w-0 flex-shrink-0">

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useCollaboration } from '../../context/CollaborationContext';
 import { CollaborationApiClient } from '../../services/collaborationApi';
 import {
@@ -36,6 +36,29 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ onOpenAdmi
   const [isProjDropdownOpen, setIsProjDropdownOpen] = useState(false);
   const [isNewWsModalOpen, setIsNewWsModalOpen] = useState(false);
   const [isNewProjModalOpen, setIsNewProjModalOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns when clicking outside or pressing ESC
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsWsDropdownOpen(false);
+        setIsProjDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsWsDropdownOpen(false);
+        setIsProjDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   // New Workspace form state
   const [newWsName, setNewWsName] = useState('');
@@ -78,7 +101,7 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ onOpenAdmi
   };
 
   return (
-    <div className="flex items-center space-x-2 text-xs">
+    <div ref={containerRef} className="flex items-center space-x-2 text-xs relative">
       {/* Workspace Switcher */}
       <div className="relative">
         <button
