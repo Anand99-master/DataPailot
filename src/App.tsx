@@ -3,6 +3,7 @@ import { DatabaseExplorer } from './components/Sidebar/DatabaseExplorer';
 import { ConnectionModal } from './components/Sidebar/ConnectionModal';
 import { SqlEditor } from './components/Editor/SqlEditor';
 import { SqlEditorTabs } from './components/Editor/SqlEditorTabs';
+import { SqlWorkspace } from './components/Editor/SqlWorkspace';
 import { QueryLibraryModal } from './components/Editor/QueryLibraryModal';
 import { SaveQueryModal } from './components/Editor/SaveQueryModal';
 import { SavedQuery } from './types/database';
@@ -919,61 +920,39 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
             }}
           >
             {activeWorkspaceView === 'editor' ? (
-              <>
-                {/* Top Half: SQL Editor */}
-                <div className="h-1/2 min-h-[220px] flex flex-col">
-                  <SqlEditorTabs
-                    tabs={tabs}
-                    activeTabId={activeTabId}
-                    onTabSelect={setActiveTabId}
-                    onTabClose={handleCloseTab}
-                    onTabAdd={handleAddTab}
-                    onTabRename={handleRenameTab}
-                    onTabDuplicate={handleDuplicateTab}
-                  />
-                  <SqlEditor
-                    query={sqlQuery}
-                    onSaveQuery={() => setSaveModalState({ isOpen: true, mode: 'save' })}
-                    onSaveAsQuery={() => setSaveModalState({ isOpen: true, mode: 'save_as' })}
-                    onOpenLibrary={() => setIsLibraryOpen(true)}
-                    isSaved={!!activeTab?.savedQueryId}
-                    isModified={!!activeTab?.isModified}
-                    onRevertQuery={() => {
-                      if (activeTab?.savedQueryId) {
-                        const sq = savedQueries.find(q => q.id === activeTab.savedQueryId);
-                        if (sq) setSqlQuery(sq.query);
-                      }
-                    }}
-                    onChangeQuery={setSqlQuery}
-                    onRunQuery={handleRunQuery}
-                    onCancelQuery={handleCancelQuery}
-                    onClearQuery={handleClearQuery}
-                    onExplainSql={handleExplainSql}
-              onAnalyzePerformance={handleAnalyzePerformance}
-                    isRunning={isRunningQuery}
-                    lastResult={queryResult}
-                    history={queryHistory}
-                    onSelectHistoryItem={handleSelectHistoryItem}
-                    onClearHistory={handleClearHistory}
-                    tables={tables}
-                    tableDetailsCache={tableDetailsCache}
-                  />
-                </div>
-
-                {/* Bottom Half: Query Results */}
-                <div className="h-1/2 min-h-[220px] flex flex-col">
-                  <QueryResults
-                    result={queryResult}
-                    isRunning={isRunningQuery}
-                    onCancelQuery={handleCancelQuery}
-                    onExplainResults={handleExplainResults}
-                    onFixSqlError={handleFixSqlError}
-                    onNavigateToVisualization={() => setActiveWorkspaceView('visualization')}
-                    onAddToDashboard={handleAddToDashboardFromResults}
-                    sourceName={selectedTable?.name}
-                  />
-                </div>
-              </>
+              <SqlWorkspace
+                tabs={tabs}
+                activeTabId={activeTabId}
+                onTabSelect={setActiveTabId}
+                onTabClose={handleCloseTab}
+                onTabAdd={handleAddTab}
+                onTabRename={handleRenameTab}
+                onTabDuplicate={handleDuplicateTab}
+                sqlQuery={sqlQuery}
+                onChangeQuery={setSqlQuery}
+                onRunQuery={handleRunQuery}
+                onCancelQuery={handleCancelQuery}
+                onClearQuery={handleClearQuery}
+                onExplainSql={handleExplainSql}
+                onAnalyzePerformance={handleAnalyzePerformance}
+                isRunningQuery={isRunningQuery}
+                queryResult={queryResult}
+                queryHistory={queryHistory}
+                onSelectHistoryItem={handleSelectHistoryItem}
+                onClearHistory={handleClearHistory}
+                tables={tables}
+                tableDetailsCache={tableDetailsCache}
+                onSaveQuery={() => setSaveModalState({ isOpen: true, mode: 'save' })}
+                onSaveAsQuery={() => setSaveModalState({ isOpen: true, mode: 'save_as' })}
+                onOpenLibrary={() => setIsLibraryOpen(true)}
+                activeTab={activeTab}
+                savedQueries={savedQueries}
+                onExplainResults={handleExplainResults}
+                onFixSqlError={handleFixSqlError}
+                onNavigateToVisualization={() => setActiveWorkspaceView('visualization')}
+                onAddToDashboardFromResults={handleAddToDashboardFromResults}
+                selectedTable={selectedTable}
+              />
             ) : activeWorkspaceView === 'analysis' ? (
               <div className="flex-1 flex flex-col h-full overflow-hidden">
                 <div className={`${queryResult ? 'h-3/5' : 'h-full'} flex flex-col overflow-hidden`}>

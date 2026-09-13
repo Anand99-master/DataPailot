@@ -16,14 +16,15 @@ import {
   ChevronDown,
   Bot,
   Save,
-  Copy
+  Copy,
+  BookTemplate,
+  Loader2
 } from 'lucide-react';
 import { QueryExecutionResult, QueryHistoryItem, DiscoveredTable, TableDetailsResult } from '../../types/database';
 import { getSuggestions, Suggestion } from '../../utils/sqlAutocomplete';
 import { getCaretCoordinates } from '../../utils/caretCoordinates';
 import { SqlAutocomplete } from './SqlAutocomplete';
 import { SnippetLibraryModal } from './SnippetLibraryModal';
-import { BookTemplate } from 'lucide-react';
 import { formatSql } from '../../utils/sqlFormatter';
 
 interface SqlEditorProps {
@@ -71,11 +72,10 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
   isModified,
   onRevertQuery
 }) => {
-  
-  const [activeTab, setActiveTab] = useState('query-1');
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSnippetsOpen, setIsSnippetsOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
 
   // Autocomplete state
@@ -94,10 +94,9 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
       setCurrentPrefix(prefix);
       setCurrentFilter(filterText);
       setIsAutocompleteOpen(true);
-      
+
       if (textareaRef.current) {
         const coords = getCaretCoordinates(textareaRef.current, cursor);
-        // adjust coords based on textarea scroll
         coords.top -= textareaRef.current.scrollTop;
         coords.left -= textareaRef.current.scrollLeft;
         setCaretPos(coords);
@@ -107,20 +106,18 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
     }
   };
 
-  
   const insertSnippet = (snippetSql: string) => {
     if (!textareaRef.current) return;
     const cursor = textareaRef.current.selectionStart;
     const textBefore = query.substring(0, cursor);
     const textAfter = query.substring(cursor);
-    
-    // Ensure we have some spacing if not at start of line
+
     const needsNewlineBefore = textBefore.length > 0 && !textBefore.endsWith('\n');
     const prefix = needsNewlineBefore ? '\n' : '';
-    
+
     const newQuery = textBefore + prefix + snippetSql + textAfter;
     onChangeQuery(newQuery);
-    
+
     setTimeout(() => {
       if (textareaRef.current) {
         const newCursor = textBefore.length + prefix.length + snippetSql.length;
@@ -135,23 +132,21 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
     const cursor = textareaRef.current.selectionStart;
     const textBefore = query.substring(0, cursor);
     const textAfter = query.substring(cursor);
-    
-    // determine what to replace
+
     let replacement = suggestion.name;
     if (suggestion.name.includes(' ') && suggestion.type !== 'keyword') {
       replacement = `"${suggestion.name}"`;
     }
-    
+
     let newBefore = textBefore;
     if (currentFilter.length > 0) {
       newBefore = newBefore.slice(0, -currentFilter.length);
     }
-    
+
     const newQuery = newBefore + replacement + textAfter;
     onChangeQuery(newQuery);
     setIsAutocompleteOpen(false);
-    
-    // Set cursor
+
     setTimeout(() => {
       if (textareaRef.current) {
         const newCursor = newBefore.length + replacement.length;
@@ -160,7 +155,6 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
       }
     }, 0);
   };
-
 
   // Close history dropdown on outside click
   useEffect(() => {
@@ -182,7 +176,12 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
     onChangeQuery(formatted);
   };
 
-  
+  const handleScroll = () => {
+    if (textareaRef.current && gutterRef.current) {
+      gutterRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Ctrl + Shift + Space for Snippets
     if (e.ctrlKey && e.shiftKey && e.code === 'Space') {
@@ -220,86 +219,99 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
       }
       return;
     }
-    
+
     if ((e.metaKey || e.ctrlKey) && e.key === ' ') {
       e.preventDefault();
       updateSuggestions(query, e.currentTarget.selectionStart, true);
     }
   };
-  
+
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChangeQuery(e.target.value);
     updateSuggestions(e.target.value, e.target.selectionStart);
   };
-  
-  const handleClick = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+
+  const handleClick = () => {
     setIsAutocompleteOpen(false);
   };
-  
+
   const handleBlur = () => {
-    // delay to allow click on autocomplete list
     setTimeout(() => {
       setIsAutocompleteOpen(false);
     }, 150);
   };
 
-
   // Calculate line numbers
   const lines = query.split('\n');
-  const lineCount = Math.max(lines.length, 12);
+  const lineCount = Math.max(lines.length, 8);
   const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
 
   return (
     <div
       id="sql-editor-panel"
-      className="flex flex-col h-full bg-slate-950 border-b border-slate-800 text-slate-200"
+      className="flex flex-col h-full bg-slate-950 text-slate-200 min-h-0 overflow-hidden"
     >
-      {/* Editor Tabs & Top Bar */}
-      <div className="flex items-center justify-between bg-slate-900 border-b border-slate-800 px-3 py-1.5 select-none">
-        <div className="flex items-center space-x-2">
+      {/* Query Toolbar: Organized into Logical Groups */}
+      <div className="flex items-center justify-between bg-slate-900 border-b border-slate-800 px-3 py-1.5 select-none flex-wrap gap-1.5 flex-shrink-0">
+        {/* Left: Library & Save Utilities */}
+        <div className="flex items-center space-x-1.5">
           {onOpenLibrary && (
             <button
+              id="btn-query-library"
               type="button"
               onClick={onOpenLibrary}
-              className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded transition-colors"
-              title="Query Library"
+              className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-750 border border-slate-700/60 rounded transition-colors"
+              title="Open Query Library"
+              aria-label="Open Query Library"
             >
               <FileCode2 className="w-3.5 h-3.5 text-emerald-400" />
               <span>Library</span>
             </button>
           )}
-          
+
           {(onSaveQuery || onSaveAsQuery) && (
-            <div className="flex items-center space-x-1 ml-2 border-l border-slate-700 pl-2">
-              <button
-                type="button"
-                onClick={onSaveQuery}
-                className={`flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
-                   isSaved && !isModified ? 'text-slate-500 cursor-default' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                }`}
-                disabled={isSaved && !isModified}
-                title={isSaved && !isModified ? "Saved" : "Save Query"}
-              >
-                <Save className="w-3.5 h-3.5" />
-                <span>Save</span>
-              </button>
+            <div className="flex items-center space-x-1 border-l border-slate-800 pl-1.5">
+              {onSaveQuery && (
+                <button
+                  id="btn-save-query"
+                  type="button"
+                  onClick={onSaveQuery}
+                  className={`flex items-center space-x-1 px-2.5 py-1 text-xs font-medium rounded border transition-colors ${
+                    isSaved && !isModified
+                      ? 'text-slate-500 bg-slate-900 border-slate-800 cursor-default'
+                      : 'text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-750 border-slate-700/60'
+                  }`}
+                  disabled={isSaved && !isModified}
+                  title={isSaved && !isModified ? 'Query Saved' : 'Save Query (Ctrl+S)'}
+                  aria-label="Save Query"
+                >
+                  <Save className="w-3.5 h-3.5 text-sky-400" />
+                  <span>{isSaved && !isModified ? 'Saved' : 'Save'}</span>
+                </button>
+              )}
+
               {isSaved && onSaveAsQuery && (
                 <button
+                  id="btn-save-as-query"
                   type="button"
                   onClick={onSaveAsQuery}
-                  className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded transition-colors"
+                  className="flex items-center space-x-1 px-2 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-750 border border-slate-700/60 rounded transition-colors"
                   title="Save As New Query"
+                  aria-label="Save As New Query"
                 >
-                  <Copy className="w-3.5 h-3.5" />
+                  <Copy className="w-3.5 h-3.5 text-slate-400" />
                   <span>Save As</span>
                 </button>
               )}
+
               {isSaved && isModified && onRevertQuery && (
                 <button
+                  id="btn-revert-query"
                   type="button"
                   onClick={onRevertQuery}
-                  className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-amber-400 hover:text-amber-300 hover:bg-slate-800 rounded transition-colors"
+                  className="flex items-center space-x-1 px-2 py-1 text-xs font-medium text-amber-400 hover:text-amber-300 bg-amber-950/40 hover:bg-amber-950/60 border border-amber-800/60 rounded transition-colors"
                   title="Revert to saved query"
+                  aria-label="Revert to saved query"
                 >
                   <span>Revert</span>
                 </button>
@@ -308,33 +320,78 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
           )}
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center space-x-2 relative">
-          
-          {/* Snippets Button */}
+        {/* Right: Secondary Actions, Utilities & Primary Run Query Action */}
+        <div className="flex items-center space-x-1.5 relative">
+          {/* Secondary Actions: Format, Performance, Explain */}
           <button
+            id="btn-format-sql"
+            onClick={handleFormat}
+            className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-750 border border-slate-700/60 rounded transition-colors"
+            title="Format and standardize SQL indentation"
+            aria-label="Format SQL"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">Format</span>
+          </button>
+
+          {onAnalyzePerformance && (
+            <button
+              id="btn-performance-sql"
+              onClick={() => onAnalyzePerformance(query)}
+              disabled={!query.trim() || isRunning}
+              className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-amber-300 hover:text-white bg-amber-950/50 hover:bg-amber-900/70 border border-amber-700/50 rounded transition-colors disabled:opacity-40"
+              title="Analyze Query Performance & Indexes"
+              aria-label="Performance Analysis"
+            >
+              <Activity className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden md:inline">Performance</span>
+            </button>
+          )}
+
+          {onExplainSql && (
+            <button
+              id="btn-explain-sql"
+              onClick={() => onExplainSql(query)}
+              disabled={!query.trim() || isRunning}
+              className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-indigo-300 hover:text-white bg-indigo-950/50 hover:bg-indigo-900/70 border border-indigo-700/50 rounded transition-colors disabled:opacity-40"
+              title="Explain this SQL query with AI"
+              aria-label="Explain SQL with AI"
+            >
+              <Bot className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="hidden md:inline">Explain</span>
+            </button>
+          )}
+
+          {/* Divider */}
+          <div className="h-4 w-px bg-slate-800 mx-0.5" />
+
+          {/* Utility: Snippets */}
+          <button
+            id="btn-snippets-modal"
             type="button"
             onClick={() => setIsSnippetsOpen(true)}
-            className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700/80 border border-slate-700/80 rounded transition-colors"
+            className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-750 border border-slate-700/60 rounded transition-colors"
             title="SQL Snippets (Ctrl+Shift+Space)"
+            aria-label="SQL Snippets"
           >
             <BookTemplate className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Snippets</span>
+            <span className="hidden sm:inline">Snippets</span>
           </button>
-          
-          {/* Query History Dropdown */}
+
+          {/* Utility: Query History Dropdown */}
           <div ref={historyMenuRef} className="relative">
             <button
               id="btn-query-history"
               type="button"
               onClick={() => setIsHistoryOpen(prev => !prev)}
-              className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700/80 border border-slate-700/80 rounded transition-colors"
+              className="flex items-center space-x-1 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-750 border border-slate-700/60 rounded transition-colors"
               title="View recent query history"
+              aria-label="Recent Query History"
             >
               <History className="w-3.5 h-3.5 text-sky-400" />
-              <span>History</span>
+              <span className="hidden sm:inline">History</span>
               {history.length > 0 && (
-                <span className="ml-0.5 px-1.5 py-0.2 bg-slate-900 text-slate-400 rounded-full text-[10px] font-mono">
+                <span className="px-1.5 py-0.2 bg-slate-950 text-slate-400 rounded-full text-[10px] font-mono">
                   {history.length}
                 </span>
               )}
@@ -344,9 +401,9 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
             {isHistoryOpen && (
               <div
                 id="query-history-dropdown"
-                className="absolute right-0 mt-1.5 w-80 max-h-80 bg-slate-900 border border-slate-800 rounded-lg shadow-xl z-50 flex flex-col overflow-hidden text-xs"
+                className="absolute right-0 mt-1.5 w-80 max-h-80 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl z-50 flex flex-col overflow-hidden text-xs"
               >
-                <div className="p-2.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+                <div className="p-2.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/90">
                   <div className="flex items-center space-x-1.5 text-slate-300 font-semibold">
                     <History className="w-3.5 h-3.5 text-sky-400" />
                     <span>Recent Query History</span>
@@ -419,69 +476,38 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
             )}
           </div>
 
-          <button
-            id="btn-format-sql"
-            onClick={handleFormat}
-            className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700/80 border border-slate-700/80 rounded transition-colors"
-            title="Format and standardize SQL"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Format SQL</span>
-          </button>
-
-          
-          {onAnalyzePerformance && (
-            <button
-              onClick={() => onAnalyzePerformance(query)}
-              disabled={!query.trim() || isRunning}
-              className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-amber-300 hover:text-white bg-amber-950/60 hover:bg-amber-900/80 border border-amber-700/60 rounded transition-colors disabled:opacity-40"
-              title="Analyze Query Performance"
-            >
-              <Activity className="w-3.5 h-3.5 text-amber-400" />
-              <span>Performance</span>
-            </button>
-          )}
-
-          {onExplainSql && (
-            <button
-              id="btn-explain-sql"
-              onClick={() => onExplainSql(query)}
-              disabled={!query.trim() || isRunning}
-              className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-indigo-300 hover:text-white bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-700/60 rounded transition-colors disabled:opacity-40"
-              title="Explain this SQL query with AI"
-            >
-              <Bot className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Explain SQL</span>
-            </button>
-          )}
-
+          {/* Utility: Clear */}
           <button
             id="btn-clear-sql"
             onClick={onClearQuery}
-            className="flex items-center space-x-1.5 px-2.5 py-1 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700/80 border border-slate-700/80 rounded transition-colors"
+            className="flex items-center space-x-1 px-2.5 py-1 text-xs font-medium text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-750 border border-slate-700/50 rounded transition-colors"
             title="Clear editor contents"
+            aria-label="Clear SQL"
           >
             <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-            <span>Clear</span>
+            <span className="hidden sm:inline">Clear</span>
           </button>
 
+          {/* Primary Action: RUN QUERY / CANCEL */}
           {isRunning ? (
             <button
               id="btn-cancel-query"
               onClick={onCancelQuery}
-              className="flex items-center space-x-1.5 px-3.5 py-1 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded shadow-sm transition-all"
+              className="flex items-center space-x-1.5 px-3 py-1 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 active:bg-rose-700 rounded shadow-sm transition-all focus-visible:ring-2 focus-visible:ring-rose-400"
               title="Cancel running query"
+              aria-label="Cancel Running Query"
             >
-              <XCircle className="w-3.5 h-3.5" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
               <span>Cancel</span>
             </button>
           ) : (
             <button
               id="btn-run-query"
               onClick={onRunQuery}
-              disabled={!query.trim()}
-              className="flex items-center space-x-1.5 px-3.5 py-1 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:pointer-events-none rounded shadow-sm transition-all"
-              title="Execute query (Ctrl+Enter / ⌘+Enter)"
+              disabled={!query.trim() || isRunning}
+              className="flex items-center space-x-1.5 px-3.5 py-1 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-40 disabled:pointer-events-none rounded shadow-sm transition-all focus-visible:ring-2 focus-visible:ring-emerald-400"
+              title="Execute SQL query (Ctrl+Enter / ⌘+Enter)"
+              aria-label="Run Query"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
               <span>Run Query</span>
@@ -490,17 +516,21 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
         </div>
       </div>
 
-      {/* Editor Main Surface: Gutter + Textarea */}
-      <div className="relative flex-1 flex overflow-hidden font-mono text-xs">
+      {/* Editor Main Surface: Line Numbers + Textarea with Synchronized Scrolling */}
+      <div className="relative flex-1 flex min-h-0 overflow-hidden font-mono text-xs">
         {/* Line Numbers Gutter */}
-        <div className="w-12 py-3 bg-slate-950/80 select-none text-slate-600 text-right pr-3 border-r border-slate-900 leading-6 font-mono text-[11px]">
+        <div
+          ref={gutterRef}
+          aria-hidden="true"
+          className="w-11 py-3 bg-slate-950/90 select-none text-slate-600 text-right pr-2.5 border-r border-slate-900 leading-5 font-mono text-[11px] overflow-hidden flex-shrink-0"
+        >
           {lineNumbers.map(n => (
-            <div key={n}>{n}</div>
+            <div key={n} className="h-5">{n}</div>
           ))}
         </div>
 
-        {/* SQL Input Area */}
-        <div className="relative flex-1 h-full">
+        {/* SQL Input Area: Constrained to Parent, Horizontal Scroll Only for Long Lines */}
+        <div className="relative flex-1 h-full min-w-0 overflow-hidden">
           {isAutocompleteOpen && (
             <SqlAutocomplete
               suggestions={suggestions}
@@ -517,66 +547,65 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
             onClick={handleClick}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
-            placeholder="-- Write your read-only SQL query here (e.g. SELECT * FROM users LIMIT 50;)"
+            onScroll={handleScroll}
+            placeholder="-- Write your read-only SQL query here (e.g. SELECT * FROM customers LIMIT 50;)"
             spellCheck={false}
-            className="w-full h-full p-3 bg-transparent text-slate-200 placeholder-slate-600 resize-none focus:outline-hidden leading-6 font-mono selection:bg-emerald-500/30 overflow-auto"
+            className="w-full h-full p-3 bg-transparent text-slate-200 placeholder-slate-600 resize-none focus:outline-hidden leading-5 font-mono selection:bg-emerald-500/30 overflow-auto whitespace-pre"
           />
         </div>
       </div>
 
-      {/* Query Status Area */}
+      {/* Query Status Bar */}
       <div
         id="query-status-bar"
-        className="px-4 py-2 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 select-none"
+        className="px-3 py-1.5 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 select-none flex-shrink-0"
       >
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-1.5">
-            <span className="text-slate-500 font-medium">Status:</span>
+        <div className="flex items-center space-x-3 overflow-hidden truncate">
+          <div className="flex items-center space-x-1.5 flex-shrink-0">
+            <span className="text-slate-500 font-medium text-[11px]">Status:</span>
             {isRunning ? (
-              <span className="flex items-center space-x-1 text-amber-400 font-medium">
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              <span className="flex items-center space-x-1 text-amber-400 font-medium text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
                 <span>Executing query...</span>
               </span>
             ) : lastResult?.status === 'success' ? (
-              <span className="flex items-center space-x-1 text-emerald-400 font-medium">
+              <span className="flex items-center space-x-1 text-emerald-400 font-medium text-[11px]">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Completed successfully</span>
+                <span>Success</span>
               </span>
             ) : lastResult?.status === 'cancelled' ? (
-              <span className="flex items-center space-x-1 text-amber-400 font-medium">
+              <span className="flex items-center space-x-1 text-amber-400 font-medium text-[11px]">
                 <XCircle className="w-3.5 h-3.5" />
                 <span>Cancelled</span>
               </span>
             ) : lastResult?.status === 'error' ? (
-              <span className="flex items-center space-x-1 text-rose-400 font-medium">
+              <span className="flex items-center space-x-1 text-rose-400 font-medium text-[11px]">
                 <AlertCircle className="w-3.5 h-3.5" />
-                <span>Execution error</span>
+                <span>Error</span>
               </span>
             ) : (
-              <span className="text-slate-400">Ready</span>
+              <span className="text-slate-400 text-[11px]">Ready</span>
             )}
           </div>
 
           {lastResult && lastResult.status !== 'idle' && (
             <>
-              <div className="h-3 w-px bg-slate-700" />
-              <div className="flex items-center space-x-1">
+              <div className="h-3 w-px bg-slate-800 flex-shrink-0" />
+              <div className="flex items-center space-x-1 flex-shrink-0 text-[11px]">
                 <Clock className="w-3 h-3 text-slate-500" />
-                <span>Time:</span>
-                <span className="font-mono text-slate-300">{lastResult.executionTimeMs} ms</span>
+                <span>{lastResult.executionTimeMs} ms</span>
               </div>
 
               {lastResult.status === 'success' && (
                 <>
-                  <div className="h-3 w-px bg-slate-700" />
-                  <div className="flex items-center space-x-1">
+                  <div className="h-3 w-px bg-slate-800 flex-shrink-0" />
+                  <div className="flex items-center space-x-1 flex-shrink-0 text-[11px]">
                     <Code className="w-3 h-3 text-slate-500" />
-                    <span>Rows:</span>
                     <span className="font-mono text-slate-300">
-                      {lastResult.rowCount.toLocaleString()}
+                      {lastResult.rowCount.toLocaleString()} {lastResult.rowCount === 1 ? 'row' : 'rows'}
                     </span>
                     {lastResult.isTruncated && (
-                      <span className="text-amber-400 text-[10px] ml-1 font-semibold">
+                      <span className="text-amber-400 text-[10px] ml-0.5 font-semibold">
                         (Limited)
                       </span>
                     )}
@@ -588,17 +617,17 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
         </div>
 
         {/* Security & shortcut hint */}
-        <div className="flex items-center space-x-3 text-[11px] text-slate-500">
-          <span className="flex items-center gap-1">
+        <div className="flex items-center space-x-2.5 text-[11px] text-slate-500 flex-shrink-0">
+          <span className="hidden sm:flex items-center gap-1">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400/80" />
-            <span>Read-Only Analytical Mode</span>
+            <span>Read-Only Mode</span>
           </span>
-          <span className="hidden sm:inline-block px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 font-mono text-[10px]">
+          <span className="hidden md:inline-block px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700/80 font-mono text-[10px] text-slate-400">
             Ctrl + Enter to run
           </span>
         </div>
       </div>
-    
+
       <SnippetLibraryModal
         isOpen={isSnippetsOpen}
         onClose={() => setIsSnippetsOpen(false)}

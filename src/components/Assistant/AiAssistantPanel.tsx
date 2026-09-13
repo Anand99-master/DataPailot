@@ -362,17 +362,66 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
     setErrorMessage(null);
   };
 
+  const [isMinimized, setIsMinimized] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('datapilot_ai_minimized') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleMinimize = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsMinimized(prev => {
+      const next = !prev;
+      try {
+        sessionStorage.setItem('datapilot_ai_minimized', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
   if (!isOpen) {
+    if (isMinimized) {
+      return (
+        <div className="fixed right-3 bottom-3 z-30 flex items-center space-x-1">
+          <button
+            id="btn-open-ai-panel-minimized"
+            type="button"
+            onClick={onToggle}
+            className="w-8 h-8 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shadow-lg transition-all border border-indigo-400/30 group"
+            title="Open AI Data Assistant (Click to expand)"
+            aria-label="Open AI Assistant"
+          >
+            <Sparkles className="w-4 h-4 text-indigo-200 group-hover:rotate-12 transition-transform" />
+          </button>
+        </div>
+      );
+    }
+
     return (
-      <button
-        id="btn-open-ai-panel"
-        onClick={onToggle}
-        className="fixed right-3 bottom-3 z-30 flex items-center space-x-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg shadow-lg transition-all border border-indigo-400/30"
-        title="Open AI Data Assistant"
-      >
-        <Sparkles className="w-3.5 h-3.5" />
-        <span>AI Data Assistant</span>
-      </button>
+      <div className="fixed right-3 bottom-3 z-30 flex items-center bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg shadow-lg border border-indigo-400/30 overflow-hidden transition-all group">
+        <button
+          id="btn-open-ai-panel"
+          type="button"
+          onClick={onToggle}
+          className="flex items-center space-x-2 px-3 py-1.5 transition-colors focus:outline-hidden"
+          title="Open AI Data Assistant"
+          aria-label="Open AI Data Assistant"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-indigo-200 group-hover:rotate-12 transition-transform" />
+          <span>AI Assistant</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleToggleMinimize}
+          className="px-1.5 py-1.5 bg-indigo-700/60 hover:bg-indigo-700 text-indigo-200 hover:text-white border-l border-indigo-500/40 transition-colors"
+          title="Minimize to icon"
+          aria-label="Minimize AI button"
+        >
+          <span className="text-[10px] font-bold leading-none">−</span>
+        </button>
+      </div>
     );
   }
 

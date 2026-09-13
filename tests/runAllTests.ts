@@ -19,6 +19,7 @@ import { runDataQualitySelectionTests } from './testDataQualitySelection';
 import { runDataTransformation15_2Tests } from './testDataTransformation15_2';
 import { runAiDataCleaning15_5Tests } from './testAiDataCleaning15_5';
 import { runLargeDatasetPerformance15_6Tests } from './testLargeDatasetPerformance15_6';
+import { runPhase16_1Tests } from './testPhase16_1UiOptimization';
 
 console.log('\n============================================================');
 console.log('DATAPILOT PHASE 8: AUTOMATED TEST SUITE & REGRESSION MATRIX');
@@ -50,7 +51,8 @@ const suites: TestGroup[] = [
   { name: '17. DATA QUALITY WORKSPACE SELECTION', runner: runDataQualitySelectionTests },
   { name: '18. ADVANCED DATA TRANSFORMATION WORKSPACE (15.2)', runner: runDataTransformation15_2Tests },
   { name: '19. AI-ASSISTED DATA CLEANING & AUTO-CLEAN RECOMMENDATIONS (15.5)', runner: runAiDataCleaning15_5Tests },
-  { name: '20. LARGE DATASET PERFORMANCE & PROCESSING ENGINE (15.6)', runner: runLargeDatasetPerformance15_6Tests }
+  { name: '20. LARGE DATASET PERFORMANCE & PROCESSING ENGINE (15.6)', runner: runLargeDatasetPerformance15_6Tests },
+  { name: '21. PHASE 16.1 UI/UX POLISH & SQL WORKSPACE OPTIMIZATION', runner: runPhase16_1Tests }
 ];
 
 async function runAll() {
