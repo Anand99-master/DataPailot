@@ -569,6 +569,13 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
 
   // Introspect table details when user selects a table
   const handleSelectTable = async (table: DiscoveredTable) => {
+    if (table.schema === 'imported') {
+      const ds = importedDatasets.find(d => d.tableName === table.name);
+      if (ds) setActiveDatasetId(ds.datasetId);
+    } else {
+      setActiveDatasetId(null);
+    }
+
     setIsLoadingTableDetails(true);
     try {
       let details = tableDetailsCache[`${table.schema}.${table.name}`];
@@ -1018,6 +1025,8 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
                 connection={connection}
                 tables={tables}
                 onSelectTable={handleSelectTable}
+                activeDatasetId={activeDatasetId}
+                dataset={activeDataset}
               />
             ) : (
               <DashboardWorkspace

@@ -3,6 +3,7 @@ import { SchemaContextService } from './SchemaContextService';
 import { SchemaValidator } from './SchemaValidator';
 import { QuerySafetyValidator } from '../database/QuerySafetyValidator';
 import { ConnectionManager } from '../database/ConnectionManager';
+import { Logger } from '../utils/logger';
 
 export interface SqlGenerationRequest {
   question: string;

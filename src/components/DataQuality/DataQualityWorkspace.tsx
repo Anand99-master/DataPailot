@@ -5,13 +5,15 @@ import {
   ChevronRight, Brain, X, CheckCircle2, ListFilter
 } from 'lucide-react';
 import { DatabaseApiClient } from '../../services/databaseApi';
-import { DiscoveredTable, SanitizedConnectionInfo } from '../../types/database';
-import { DataProfile, QualityIssue } from '../../types/import';
+import { DiscoveredTable, SanitizedConnectionInfo, TableDetailsResult } from '../../types/database';
+import { DataProfile, QualityIssue, ImportedDataset } from '../../types/import';
 import { ExcelExportService } from '../../services/excelExportService';
 
 interface DataQualityWorkspaceProps {
-  selectedTable: DiscoveredTable | null;
+  selectedTable: TableDetailsResult | null;
   connection: SanitizedConnectionInfo | null;
+  activeDatasetId?: string | null;
+  dataset?: ImportedDataset | null;
   onSelectTable: (table: DiscoveredTable) => void;
   tables: DiscoveredTable[];
 }
@@ -21,6 +23,8 @@ type TabType = 'overview' | 'columns' | 'missing' | 'duplicates' | 'numeric' | '
 export const DataQualityWorkspace: React.FC<DataQualityWorkspaceProps> = ({
   selectedTable,
   connection,
+  activeDatasetId,
+  dataset,
   tables
 }) => {
   const [profile, setProfile] = useState<DataProfile | null>(null);
@@ -55,12 +59,16 @@ export const DataQualityWorkspace: React.FC<DataQualityWorkspaceProps> = ({
   };
 
   useEffect(() => {
-    if (selectedTable) {
-      loadProfile(selectedTable.schema, selectedTable.name);
+    const isImported = selectedTable?.schema === 'imported' || !!dataset;
+    const sourceName = dataset?.tableName || selectedTable?.name;
+    const schema = dataset ? 'imported' : selectedTable?.schema;
+    
+    if (sourceName && schema) {
+      loadProfile(schema, sourceName);
     } else {
       setProfile(null);
     }
-  }, [selectedTable]);
+  }, [selectedTable?.schema, selectedTable?.name, dataset?.datasetId]);
 
   const handleExportCSV = () => {
     if (!profile) return;
