@@ -20,6 +20,8 @@ import { runDataTransformation15_2Tests } from './testDataTransformation15_2';
 import { runAiDataCleaning15_5Tests } from './testAiDataCleaning15_5';
 import { runLargeDatasetPerformance15_6Tests } from './testLargeDatasetPerformance15_6';
 import { runPhase16_1Tests } from './testPhase16_1UiOptimization';
+import { runPhase16_3Tests } from './testPhase16_3Collaboration';
+import { runPhase16_4Tests } from './testPhase16_4Production';
 
 console.log('\n============================================================');
 console.log('DATAPILOT PHASE 8: AUTOMATED TEST SUITE & REGRESSION MATRIX');
@@ -52,7 +54,9 @@ const suites: TestGroup[] = [
   { name: '18. ADVANCED DATA TRANSFORMATION WORKSPACE (15.2)', runner: runDataTransformation15_2Tests },
   { name: '19. AI-ASSISTED DATA CLEANING & AUTO-CLEAN RECOMMENDATIONS (15.5)', runner: runAiDataCleaning15_5Tests },
   { name: '20. LARGE DATASET PERFORMANCE & PROCESSING ENGINE (15.6)', runner: runLargeDatasetPerformance15_6Tests },
-  { name: '21. PHASE 16.1 UI/UX POLISH & SQL WORKSPACE OPTIMIZATION', runner: runPhase16_1Tests }
+  { name: '21. PHASE 16.1 UI/UX POLISH & SQL WORKSPACE OPTIMIZATION', runner: runPhase16_1Tests },
+  { name: '22. PHASE 16.3 SHARING, REPORTS & COLLABORATION UX', runner: runPhase16_3Tests },
+  { name: '23. PHASE 16.4 PRODUCTION DEPLOYMENT & INFRASTRUCTURE', runner: runPhase16_4Tests }
 ];
 
 async function runAll() {

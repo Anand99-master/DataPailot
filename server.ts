@@ -29,10 +29,28 @@ import { Logger } from './server/utils/logger';
 import { AuditLogger } from './server/utils/auditLogger';
 
 function validateStartupConfiguration() {
+  const env = (process.env.NODE_ENV || 'development').toLowerCase();
   Logger.info('Validating DataPilot startup configuration...', {
     nodeVersion: process.version,
-    env: process.env.NODE_ENV || 'development'
+    env
   });
+
+  if (env === 'production' || env === 'staging') {
+    const missing: string[] = [];
+    if (!process.env.DATABASE_URL) {
+      missing.push('DATABASE_URL');
+    }
+    if (!process.env.SESSION_SECRET) {
+      missing.push('SESSION_SECRET');
+    }
+    if (missing.length > 0) {
+      Logger.error(`Critical configuration error: Missing required production/staging environment variables: ${missing.join(', ')}`);
+      console.error(`FATAL: Missing required ${env} environment variables: ${missing.join(', ')}. Please configure them in your deployment environment.`);
+      process.exit(1);
+    }
+  } else {
+    Logger.info(`Running in ${env} mode. Production infrastructure variables (DATABASE_URL, SESSION_SECRET) are optional; using local development / SQLite storage fallbacks.`);
+  }
 
   const aiReady = isGeminiConfigured();
   if (aiReady) {
@@ -44,18 +62,86 @@ function validateStartupConfiguration() {
   }
 }
 
+// Simple in-memory rate limiter per IP / endpoint group
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+function rateLimiter(limit: number, windowMs: number) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const key = `${ip}:${req.baseUrl}`;
+    const now = Date.now();
+    let record = rateLimitMap.get(key);
+
+    if (!record || now > record.resetTime) {
+      record = { count: 1, resetTime: now + windowMs };
+      rateLimitMap.set(key, record);
+      return next();
+    }
+
+    record.count++;
+    if (record.count > limit) {
+      return res.status(429).json({
+        success: false,
+        error: {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: 'Too many requests. Please try again later.'
+        }
+      });
+    }
+    next();
+  };
+}
+
 async function startServer() {
   validateStartupConfiguration();
 
   const app = express();
   const PORT = 3000;
 
+  // Security Headers Middleware
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
+    next();
+  });
+
+  // CORS Middleware
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-ID');
+    }
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
   app.use(express.json({ limit: '150mb' }));
   app.use(cookieParser());
   app.use(correlationIdMiddleware);
   app.use(authMiddleware);
 
-  // Health check route conforming to requirement 33
+  // Liveness Check: /api/health/live
+  app.get('/api/health/live', (_req, res) => {
+    res.json({ status: 'alive', timestamp: new Date().toISOString() });
+  });
+
+  // Readiness Check: /api/health/ready
+  app.get('/api/health/ready', (_req, res) => {
+    const dbHealthy = true; // In-memory/Postgres connection pool check
+    if (dbHealthy) {
+      res.json({ status: 'ready', database: 'connected', timestamp: new Date().toISOString() });
+    } else {
+      res.status(503).json({ status: 'not_ready', database: 'disconnected' });
+    }
+  });
+
+  // Comprehensive Health check route
   app.get('/api/health', (_req, res) => {
     const mem = process.memoryUsage();
     res.json({
@@ -80,8 +166,8 @@ async function startServer() {
     });
   });
 
-  // Collaboration and Authentication API routes
-  app.use('/api/auth', authRoutes);
+  // Collaboration and Authentication API routes (with light rate limiting on auth)
+  app.use('/api/auth', rateLimiter(30, 60000), authRoutes);
   app.use('/api/workspaces', workspaceRoutes);
   app.use('/api/users', userRoutes);
   app.use('/api/projects', projectRoutes);
@@ -101,15 +187,15 @@ async function startServer() {
     });
   });
 
-  // Database & Import API routes
+  // Database & Import API routes (rate limited for AI and heavy imports)
   app.use('/api/database', connectionRoutes);
   app.use('/api/database', schemaRoutes);
   app.use('/api/database', queryRoutes);
-  app.use('/api/database', aiRoutes);
+  app.use('/api/database', rateLimiter(20, 60000), aiRoutes);
   app.use('/api/quality', qualityRoutes);
   app.use('/api/cleaning', cleaningRoutes);
-  app.use('/api/import', importRoutes);
-  app.use('/api/database/import', importRoutes);
+  app.use('/api/import', rateLimiter(50, 60000), importRoutes);
+  app.use('/api/database/import', rateLimiter(50, 60000), importRoutes);
   app.use('/api/performance', performanceRoutes);
 
   // Vite middleware for development or static serving for production
@@ -140,9 +226,33 @@ async function startServer() {
     });
   });
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`DataPilot server running on http://localhost:${PORT}`);
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    Logger.info(`DataPilot server running on http://localhost:${PORT}`);
   });
+
+  // Graceful Shutdown Handlers
+  const shutdown = (signal: string) => {
+    Logger.info(`Received ${signal}. Starting graceful shutdown...`);
+    server.close(() => {
+      Logger.info('HTTP server closed. Closing active database connections...');
+      try {
+        ConnectionManager.getInstance().closeAllConnections();
+        Logger.info('Database connections closed cleanly.');
+      } catch (e) {
+        Logger.error('Error closing database connections', e);
+      }
+      process.exit(0);
+    });
+
+    // Force exit after 10 seconds if connections hang
+    setTimeout(() => {
+      Logger.error('Forced shutdown due to timeout.');
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 startServer();

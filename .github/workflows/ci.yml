@@ -1,0 +1,51 @@
+name: DataPilot CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  validate-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: datapilot_user
+          POSTGRES_PASSWORD: datapilot_password
+          POSTGRES_DB: datapilot_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check & lint
+        run: npm run lint
+
+      - name: Run automated test suite
+        env:
+          DATABASE_URL: postgresql://datapilot_user:datapilot_password@localhost:5432/datapilot_db
+          NODE_ENV: test
+        run: npm test
+
+      - name: Build production bundle
+        run: npm run build

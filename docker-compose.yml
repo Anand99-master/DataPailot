@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: datapilot_postgres
+    environment:
+      POSTGRES_USER: datapilot_user
+      POSTGRES_PASSWORD: datapilot_secure_password_123
+      POSTGRES_DB: datapilot_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U datapilot_user -d datapilot_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  datapilot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: datapilot_app
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://datapilot_user:datapilot_secure_password_123@postgres:5432/datapilot_db
+      - SESSION_SECRET=production_secure_session_secret_xyz_987
+      - APP_URL=http://localhost:3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:

@@ -115,4 +115,11 @@ export class ConnectionManager {
   public getActiveSessionCount(): number {
     return this.connections.size;
   }
+
+  public async closeAllConnections(): Promise<void> {
+    for (const [sessionId, conn] of this.connections.entries()) {
+      await conn.adapter.disconnect().catch(() => {});
+    }
+    this.connections.clear();
+  }
 }
