@@ -1,42 +1,82 @@
 import { ColumnMetadata, ColumnProfile, DataProfile } from '../../src/types/import';
 
+export interface ProfilerOptions {
+  maxRowsToProfile?: number;
+  maxSampleRows?: number;
+  mode?: 'auto' | 'exact' | 'sampled' | 'Exact' | 'Sampled';
+  sampleSize?: number;
+}
+
 export class DataProfiler {
   /**
    * Generates a comprehensive statistical and structural profile of an imported dataset
+   * Supporting both Exact and Sampled analysis modes for datasets up to 1,000,000+ rows.
    */
   public static profile(
     datasetId: string,
     datasetName: string,
     columns: ColumnMetadata[],
     rows: Record<string, unknown>[],
-    maxRowsToProfile = 5000
+    options: number | ProfilerOptions = 50000
   ): DataProfile {
     const totalRows = rows.length;
     const totalColumns = columns.length;
-    const sampledRows = rows.slice(0, maxRowsToProfile);
+
+    let sampleLimit = 50000;
+    let mode: 'auto' | 'exact' | 'sampled' = 'auto';
+
+    if (typeof options === 'number') {
+      sampleLimit = options;
+    } else if (options && typeof options === 'object') {
+      if (options.maxSampleRows !== undefined) sampleLimit = options.maxSampleRows;
+      else if (options.maxRowsToProfile !== undefined) sampleLimit = options.maxRowsToProfile;
+      else if (options.sampleSize !== undefined) sampleLimit = options.sampleSize;
+      
+      if (options.mode) {
+        const lowerMode = String(options.mode).toLowerCase();
+        if (lowerMode === 'exact' || lowerMode === 'sampled') {
+          mode = lowerMode as any;
+        }
+      }
+    }
+
+    // Determine sampling strategy based on thresholds:
+    // Small/Medium (< 50,000 rows): Exact
+    // Large (>= 50,000 rows): Sampled unless exact is explicitly requested
+    const isSampled = mode === 'exact' ? false : (mode === 'sampled' || totalRows > sampleLimit);
+    const effectiveLimit = Math.min(sampleLimit, totalRows);
+    const sampledRows = isSampled ? rows.slice(0, effectiveLimit) : rows;
     const sampleSize = sampledRows.length;
+    const samplePercentage = totalRows > 0 ? Math.round((sampleSize / totalRows) * 1000) / 10 : 100;
+    const analysisMode: 'Exact' | 'Sampled' = isSampled ? 'Sampled' : 'Exact';
 
     const columnProfiles: Record<string, ColumnProfile> = {};
 
-    for (const col of columns) {
+    for (let cIdx = 0; cIdx < columns.length; cIdx++) {
+      const col = columns[cIdx];
       const colName = col.name;
-      const values = sampledRows.map(r => r[colName]);
-
+      
       let nullCount = 0;
+      let zeroCount = 0;
+      let negativeCount = 0;
       const nonNulls: unknown[] = [];
       const distinctSet = new Set<unknown>();
 
-      for (const v of values) {
+      // Extract and scan values in a single fast loop
+      for (let rIdx = 0; rIdx < sampleSize; rIdx++) {
+        const v = sampledRows[rIdx][colName];
         if (v === null || v === undefined || v === '') {
           nullCount++;
         } else {
           nonNulls.push(v);
-          distinctSet.add(v);
+          if (distinctSet.size < 10000) {
+            distinctSet.add(v);
+          }
         }
       }
 
-      // If we sampled, estimate total null count proportionally
-      const estimatedNullCount = sampleSize > 0 && sampleSize < totalRows
+      // If sampled, estimate total counts proportionally with clear annotations
+      const estimatedNullCount = isSampled && sampleSize > 0
         ? Math.round((nullCount / sampleSize) * totalRows)
         : nullCount;
 
@@ -55,21 +95,24 @@ export class DataProfiler {
         nullPercentage,
         uniqueCount,
         uniquePercentage,
-        sampleValues
+        sampleValues,
+        isEstimated: isSampled,
+        estimateNote: isSampled ? `Sample-based estimation (approximate metrics calculated from ${sampleSize.toLocaleString()} sample rows, ${samplePercentage}%)` : undefined
       };
 
       // Type-specific statistical analysis
       if (col.dataType === 'integer' || col.dataType === 'numeric') {
         const numValues: number[] = [];
         let sum = 0;
-        let zeroCount = 0;
 
-        for (const v of nonNulls) {
+        for (let i = 0; i < nonNulls.length; i++) {
+          const v = nonNulls[i];
           const num = typeof v === 'number' ? v : Number(v);
           if (!isNaN(num) && isFinite(num)) {
             numValues.push(num);
             sum += num;
             if (num === 0) zeroCount++;
+            if (num < 0) negativeCount++;
           }
         }
 
@@ -87,8 +130,8 @@ export class DataProfiler {
 
           // Standard deviation
           let varianceSum = 0;
-          for (const n of numValues) {
-            varianceSum += Math.pow(n - avg, 2);
+          for (let i = 0; i < numValues.length; i++) {
+            varianceSum += Math.pow(numValues[i] - avg, 2);
           }
           const stdDev = Math.round(Math.sqrt(varianceSum / numValues.length) * 100) / 100;
 
@@ -101,6 +144,8 @@ export class DataProfiler {
           profile.average = avg;
           profile.median = median;
           profile.standardDeviation = stdDev;
+          profile.zeroCount = zeroCount;
+          profile.negativeCount = negativeCount;
           profile.numericDistribution = {
             min,
             q25,
@@ -122,17 +167,15 @@ export class DataProfiler {
         }
       } else {
         // Text profiling
-        const strValues = nonNulls.map(String);
-        if (strValues.length > 0) {
-          let minLen = Infinity;
-          let maxLen = 0;
-          for (const s of strValues) {
-            if (s.length < minLen) minLen = s.length;
-            if (s.length > maxLen) maxLen = s.length;
-          }
-          profile.shortestLength = minLen === Infinity ? 0 : minLen;
-          profile.longestLength = maxLen;
+        let minLen = Infinity;
+        let maxLen = 0;
+        for (let i = 0; i < nonNulls.length; i++) {
+          const s = String(nonNulls[i]);
+          if (s.length < minLen) minLen = s.length;
+          if (s.length > maxLen) maxLen = s.length;
         }
+        profile.shortestLength = minLen === Infinity ? 0 : minLen;
+        profile.longestLength = maxLen;
       }
 
       columnProfiles[colName] = profile;
@@ -144,7 +187,12 @@ export class DataProfiler {
       totalRows,
       totalColumns,
       profiledAt: new Date().toISOString(),
-      columns: columnProfiles
+      columns: columnProfiles,
+      rowsAnalyzed: sampleSize,
+      rowsSampled: isSampled ? sampleSize : totalRows,
+      isSampled,
+      samplePercentage,
+      analysisMode
     };
   }
 }

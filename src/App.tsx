@@ -37,8 +37,14 @@ import { ImportedDataset } from './types/import';
 import { ImportApiClient } from './services/importApi';
 import { DataImportModal } from './components/Import/DataImportModal';
 import { DatasetDetailModal } from './components/Import/DatasetDetailModal';
+import { CollaborationProvider } from './context/CollaborationContext';
+import { AuthModal } from './components/Collaboration/AuthModal';
+import { AdminConsoleModal } from './components/Collaboration/AdminConsoleModal';
+import { ActivityFeedDrawer } from './components/Collaboration/ActivityFeedDrawer';
+import { GlobalSearchModal } from './components/Collaboration/GlobalSearchModal';
+import { ReportsWorkspace } from './components/Collaboration/ReportsWorkspace';
 
-export default function App() {
+function AppContent() {
   // Connection state
   const [connection, setConnection] = useState<SanitizedConnectionInfo | null>(null);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
@@ -48,8 +54,25 @@ export default function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [inspectingDataset, setInspectingDataset] = useState<ImportedDataset | null>(null);
 
-  // Active workspace view: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality' | 'cleaning'
-  const [activeWorkspaceView, setActiveWorkspaceView] = useState<'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality' | 'cleaning'>('editor');
+  // Active workspace view: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality' | 'cleaning' | 'reports'
+  const [activeWorkspaceView, setActiveWorkspaceView] = useState<'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality' | 'cleaning' | 'reports'>('editor');
+
+  // Collaboration UI states
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isAdminConsoleOpen, setIsAdminConsoleOpen] = useState(false);
+  const [isActivityFeedOpen, setIsActivityFeedOpen] = useState(false);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsSearchModalOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Add to Dashboard Modal State
   const [addToDashboardData, setAddToDashboardData] = useState<{
@@ -855,6 +878,10 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
         onToggleAiPanel={() => setIsAiPanelOpen(prev => !prev)}
         activeView={activeWorkspaceView}
         onViewChange={setActiveWorkspaceView}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
+        onOpenAdminConsole={() => setIsAdminConsoleOpen(true)}
+        onOpenActivityFeed={() => setIsActivityFeedOpen(true)}
+        onOpenSearch={() => setIsSearchModalOpen(true)}
       />
 
       {/* Main Workspace Body: 3-Panel Layout + Optional Right AI Panel */}
@@ -1057,6 +1084,8 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
                   });
                 }}
               />
+            ) : activeWorkspaceView === 'reports' ? (
+              <ReportsWorkspace />
             ) : (
               <DashboardWorkspace
                 discoveredTables={allDiscoveredTables}
@@ -1109,6 +1138,52 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
         }}
       />
 
+      {/* Collaboration Modals */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+      />
+
+      <AdminConsoleModal
+        isOpen={isAdminConsoleOpen}
+        onClose={() => setIsAdminConsoleOpen(false)}
+      />
+
+      <ActivityFeedDrawer
+        isOpen={isActivityFeedOpen}
+        onClose={() => setIsActivityFeedOpen(false)}
+      />
+
+      <GlobalSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        onSelectResource={(type, id, name) => {
+          if (type === 'query') {
+            const sq = savedQueries.find(q => q.id === id);
+            if (sq) {
+              handleOpenLibraryQuery(sq);
+            } else {
+              setActiveWorkspaceView('editor');
+            }
+          } else if (type === 'dashboard') {
+            setActiveWorkspaceView('dashboards');
+          } else if (type === 'report') {
+            setActiveWorkspaceView('reports');
+          } else if (type === 'dataset') {
+            const ds = importedDatasets.find(d => d.datasetId === id);
+            if (ds) {
+              setActiveDatasetId(ds.datasetId);
+              handleSelectTable({
+                schema: 'imported',
+                name: ds.tableName,
+                type: 'TABLE',
+                approximateRowCount: ds.rowCount
+              });
+              setActiveWorkspaceView('analysis');
+            }
+          }
+        }}
+      />
       
       {/* Modals */}
       
@@ -1182,5 +1257,13 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
         }}
       />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <CollaborationProvider>
+      <AppContent />
+    </CollaborationProvider>
   );
 }

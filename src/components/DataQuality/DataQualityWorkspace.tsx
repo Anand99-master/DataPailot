@@ -346,6 +346,15 @@ export const DataQualityWorkspace: React.FC<DataQualityWorkspaceProps> = ({
               {profile.qualityScoreCategory || 'Unknown'} Quality
             </div>
             <div className="text-xs text-slate-500 mt-1 text-center">Overall Health Score</div>
+            {profile.isSampled ? (
+              <div className="mt-2 text-[10px] px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-full font-medium text-center">
+                Sampled ({profile.rowsAnalyzed?.toLocaleString()} rows, {profile.samplePercentage}%)
+              </div>
+            ) : (
+              <div className="mt-2 text-[10px] px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full font-medium text-center">
+                Exact (100% Analyzed)
+              </div>
+            )}
           </div>
           
           <div className="col-span-1 md:col-span-3 grid grid-cols-2 md:grid-cols-4 gap-4">

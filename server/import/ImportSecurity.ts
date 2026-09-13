@@ -2,10 +2,10 @@ import path from 'path';
 import fs from 'fs';
 
 export class ImportSecurity {
-  // 25 MB default limit
-  public static readonly MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+  // 150 MB limit supporting large analytical datasets up to 1,000,000+ rows
+  public static readonly MAX_FILE_SIZE_BYTES = 150 * 1024 * 1024;
   public static readonly MAX_PREVIEW_ROWS = 50;
-  public static readonly MAX_IMPORT_ROWS = 100000;
+  public static readonly MAX_IMPORT_ROWS = 1000000;
 
   private static readonly ALLOWED_EXTENSIONS = new Set(['.csv', '.xlsx', '.xls', '.json']);
 

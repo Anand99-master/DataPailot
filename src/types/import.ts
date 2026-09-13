@@ -58,6 +58,10 @@ export interface ColumnProfile {
   zeroCount?: number;
   negativeCount?: number;
   qualityStatus?: 'Good' | 'Warning' | 'Critical';
+  
+  // Phase 15.6: Large Dataset Profiling
+  isEstimated?: boolean;
+  estimateNote?: string;
 }
 
 export interface QualityIssue {
@@ -84,6 +88,13 @@ export interface DataProfile {
   issues?: QualityIssue[];
   duplicateRowCount?: number;
   duplicateRowPercentage?: number;
+
+  // Phase 15.6: Large Dataset Performance Profiling
+  rowsAnalyzed?: number;
+  rowsSampled?: number;
+  isSampled?: boolean;
+  samplePercentage?: number;
+  analysisMode?: 'Exact' | 'Sampled';
 }
 
 export interface DataPreview {
@@ -91,6 +102,7 @@ export interface DataPreview {
   datasetName: string;
   fileType: FileType;
   rowCount: number;
+  totalRows?: number;
   columnCount: number;
   columns: ColumnMetadata[];
   rows: Record<string, unknown>[];

@@ -1,6 +1,27 @@
 import React from 'react';
-import { Database, Sparkles, Shield, Terminal, LogOut, RefreshCw, Code2, BarChart3, PieChart, LayoutDashboard, Upload, ShieldAlert, Wand2 } from 'lucide-react';
+import {
+  Database,
+  Sparkles,
+  Shield,
+  Terminal,
+  LogOut,
+  RefreshCw,
+  Code2,
+  BarChart3,
+  PieChart,
+  LayoutDashboard,
+  Upload,
+  ShieldAlert,
+  Wand2,
+  FileText,
+  Search,
+  Activity,
+  User as UserIcon
+} from 'lucide-react';
 import { SanitizedConnectionInfo } from '../../types/database';
+import { WorkspaceSelector } from '../Collaboration/WorkspaceSelector';
+import { NotificationsPopover } from '../Collaboration/NotificationsPopover';
+import { useCollaboration } from '../../context/CollaborationContext';
 
 interface NavbarProps {
   connection: SanitizedConnectionInfo | null;
@@ -11,8 +32,12 @@ interface NavbarProps {
   isRefreshing: boolean;
   isAiPanelOpen: boolean;
   onToggleAiPanel: () => void;
-  activeView?: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality' | 'cleaning';
-  onViewChange?: (view: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality' | 'cleaning') => void;
+  activeView?: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality' | 'cleaning' | 'reports';
+  onViewChange?: (view: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'lineage' | 'data-quality' | 'cleaning' | 'reports') => void;
+  onOpenAuthModal?: () => void;
+  onOpenAdminConsole?: () => void;
+  onOpenActivityFeed?: () => void;
+  onOpenSearch?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -25,8 +50,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAiPanelOpen,
   onToggleAiPanel,
   activeView = 'editor',
-  onViewChange
+  onViewChange,
+  onOpenAuthModal,
+  onOpenAdminConsole,
+  onOpenActivityFeed,
+  onOpenSearch
 }) => {
+  const { user } = useCollaboration();
   const isConnected = Boolean(connection?.isConnected);
   const typeLabel = connection?.type
     ? connection.type === 'postgresql'
@@ -37,30 +67,33 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header
       id="workspace-navbar"
-      className="h-12 border-b border-slate-800 bg-slate-900/95 flex items-center justify-between px-4 text-slate-200 select-none z-20 flex-shrink-0"
+      className="h-12 border-b border-slate-800 bg-slate-900/95 flex items-center justify-between px-3 text-slate-200 select-none z-20 flex-shrink-0"
     >
-      {/* Left: Breadcrumbs & Status */}
-      <div className="flex items-center space-x-3">
-        <div className="flex items-center space-x-2">
+      {/* Left: Breadcrumbs & Workspace Switcher & Connection */}
+      <div className="flex items-center space-x-2.5">
+        <div className="flex items-center space-x-1.5">
           <Terminal className="w-4 h-4 text-emerald-400" />
           <span className="text-xs font-semibold text-white tracking-wide">DataPilot</span>
-          <span className="text-slate-600 text-xs">/</span>
-          <span className="text-xs text-slate-400 font-medium">Workspace</span>
         </div>
+
+        <div className="h-3 w-px bg-slate-800" />
+
+        {/* Workspace & Project Selector */}
+        <WorkspaceSelector onOpenAdminConsole={onOpenAdminConsole} />
 
         <div className="h-3 w-px bg-slate-800" />
 
         {/* Database Connection Pill */}
         {isConnected ? (
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1.5">
             <button
               onClick={onOpenConnectModal}
-              className="flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+              className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 transition-colors"
               title="View connection parameters"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>{typeLabel} Connected</span>
-              <span className="text-slate-400 font-mono text-[11px]">({connection?.database})</span>
+              <span>{typeLabel}</span>
+              <span className="text-slate-400 font-mono text-[10px]">({connection?.database})</span>
             </button>
 
             <button
@@ -74,85 +107,71 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             <button
               onClick={onDisconnect}
-              className="flex items-center space-x-1 px-2 py-0.5 rounded text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 border border-rose-900/40 transition-colors"
+              className="flex items-center space-x-1 px-1.5 py-0.5 rounded text-[11px] text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 border border-rose-900/40 transition-colors"
               title="Disconnect from database"
             >
               <LogOut className="w-3 h-3" />
-              <span>Disconnect</span>
             </button>
           </div>
         ) : (
           <button
             onClick={onOpenConnectModal}
-            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-800 hover:bg-slate-750 border border-slate-700/80 transition-colors"
+            className="flex items-center space-x-1.5 px-2 py-1 rounded-full text-xs font-medium bg-slate-800 hover:bg-slate-750 border border-slate-700/80 transition-colors"
           >
             <span className="w-2 h-2 rounded-full bg-amber-400" />
-            <span className="text-slate-300">No Database Connected</span>
+            <span className="text-slate-300">No DB</span>
           </button>
         )}
       </div>
 
       {/* Center: Mode / View Switcher */}
       {onViewChange && (
-        <div className="flex items-center p-0.5 rounded-lg bg-slate-950 border border-slate-800">
+        <div className="flex items-center p-0.5 rounded-lg bg-slate-950 border border-slate-800 overflow-x-auto">
           <button
             id="tab-btn-sql-editor"
             onClick={() => onViewChange('editor')}
-            className={`flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
               activeView === 'editor'
-                ? 'bg-slate-800 text-white shadow-sm'
+                ? 'bg-slate-800 text-white shadow-xs'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Code2 className="w-3.5 h-3.5 text-indigo-400" />
-            <span>SQL Editor</span>
+            <span>SQL</span>
           </button>
 
           <button
             id="tab-btn-analysis-toolkit"
             onClick={() => onViewChange('analysis')}
-            className={`flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
               activeView === 'analysis'
-                ? 'bg-indigo-600 text-white shadow-sm'
+                ? 'bg-indigo-600 text-white shadow-xs'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Analysis Toolkit</span>
+            <span>Analysis</span>
           </button>
 
           <button
             id="tab-btn-visualization"
             onClick={() => onViewChange('visualization')}
-            className={`flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
               activeView === 'visualization'
-                ? 'bg-purple-600 text-white shadow-sm'
+                ? 'bg-purple-600 text-white shadow-xs'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <PieChart className="w-3.5 h-3.5 text-purple-300" />
-            <span>Visualization</span>
-          </button>
-
-          <button
-            id="tab-btn-lineage"
-            onClick={() => onViewChange('lineage')}
-            className={`flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
-              activeView === 'lineage'
-                ? 'bg-amber-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5 text-amber-300" />
-            <span>Lineage</span>
+            <span>Visuals</span>
           </button>
 
           <button
             id="tab-btn-dashboards"
-            onClick={() => onViewChange && onViewChange('dashboards')}
-            className={`flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+            onClick={() => onViewChange('dashboards')}
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
               activeView === 'dashboards'
-                ? 'bg-emerald-600 text-white shadow-sm'
+                ? 'bg-emerald-600 text-white shadow-xs'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -161,55 +180,109 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
+            id="tab-btn-reports"
+            onClick={() => onViewChange('reports')}
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+              activeView === 'reports'
+                ? 'bg-cyan-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5 text-cyan-300" />
+            <span>Reports</span>
+          </button>
+
+          <button
             id="tab-btn-data-quality"
-            onClick={() => onViewChange && onViewChange('data-quality')}
-            className={`flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+            onClick={() => onViewChange('data-quality')}
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
               activeView === 'data-quality'
-                ? 'bg-rose-600 text-white shadow-sm'
+                ? 'bg-rose-600 text-white shadow-xs'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <ShieldAlert className="w-3.5 h-3.5 text-rose-300" />
-            <span>Data Quality</span>
+            <span>Quality</span>
           </button>
 
           <button
             id="tab-btn-cleaning"
-            onClick={() => onViewChange && onViewChange('cleaning')}
-            className={`flex items-center space-x-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+            onClick={() => onViewChange('cleaning')}
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
               activeView === 'cleaning'
-                ? 'bg-cyan-600 text-white shadow-sm'
+                ? 'bg-cyan-600 text-white shadow-xs'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Wand2 className="w-3.5 h-3.5 text-cyan-300" />
-            <span>Data Cleaning</span>
+            <span>Cleaning</span>
+          </button>
+
+          <button
+            id="tab-btn-lineage"
+            onClick={() => onViewChange('lineage')}
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+              activeView === 'lineage'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5 text-amber-300" />
+            <span>Lineage</span>
           </button>
         </div>
       )}
 
-      {/* Right: Security & Action Controls */}
-      <div className="flex items-center space-x-3">
+      {/* Right: Search, Activity, Notifications, Import, AI & Auth Controls */}
+      <div className="flex items-center space-x-2">
+        {/* Global Search Button */}
+        {onOpenSearch && (
+          <button
+            id="btn-global-search"
+            onClick={onOpenSearch}
+            className="flex items-center space-x-1 px-2 py-1 rounded-lg text-xs bg-slate-850 hover:bg-slate-800 border border-slate-750 text-slate-400 hover:text-slate-200 transition-colors"
+            title="Search workspace (Cmd+K)"
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span className="hidden xl:inline text-[11px]">Search</span>
+            <kbd className="hidden md:inline-block text-[9px] font-mono px-1 bg-slate-800 text-slate-400 rounded border border-slate-700">
+              ⌘K
+            </kbd>
+          </button>
+        )}
+
+        {/* Activity Feed Button */}
+        {onOpenActivityFeed && (
+          <button
+            id="btn-activity-feed"
+            onClick={onOpenActivityFeed}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            title="Workspace Activity Feed"
+          >
+            <Activity className="w-4 h-4 text-emerald-400" />
+          </button>
+        )}
+
+        {/* Notifications Popover */}
+        <NotificationsPopover />
+
+        {/* Import Data Modal Trigger */}
         {onOpenImportModal && (
           <button
             id="btn-navbar-import-data"
             onClick={onOpenImportModal}
-            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 transition-colors shadow-xs"
+            className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 transition-colors shadow-xs"
             title="Import CSV, Excel, or JSON data file"
           >
             <Upload className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Import Data</span>
+            <span>Import</span>
           </button>
         )}
 
-        <div className="hidden md:flex items-center space-x-1 text-[11px] text-slate-400 bg-slate-850 px-2.5 py-1 rounded border border-slate-800">
-          <Shield className="w-3 h-3 text-emerald-400" />
-          <span>Server Read-Only Guard</span>
-        </div>
-
+        {/* AI Assistant Button */}
         <button
           onClick={onToggleAiPanel}
-          className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
+          className={`flex items-center space-x-1.5 px-2 py-1 rounded-md text-xs font-medium border transition-colors ${
             isAiPanelOpen
               ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-300'
               : 'bg-slate-800 border-slate-700/80 text-slate-300 hover:text-white hover:bg-slate-700'
@@ -217,8 +290,23 @@ export const Navbar: React.FC<NavbarProps> = ({
           title="Toggle AI Data Assistant panel"
         >
           <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-          <span>AI Assistant</span>
+          <span className="hidden lg:inline">AI Assistant</span>
         </button>
+
+        {/* User Account / Profile Button */}
+        {onOpenAuthModal && (
+          <button
+            id="btn-user-profile"
+            onClick={onOpenAuthModal}
+            className="flex items-center space-x-1.5 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs transition-colors"
+            title="User Profile & Settings"
+          >
+            <div className="w-5 h-5 rounded-full bg-emerald-600/30 border border-emerald-500/50 flex items-center justify-center font-bold text-[10px] text-emerald-300">
+              {(user?.name || 'A').charAt(0).toUpperCase()}
+            </div>
+            <span className="hidden md:inline max-w-[80px] truncate">{user?.name || 'Account'}</span>
+          </button>
+        )}
       </div>
     </header>
   );

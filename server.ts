@@ -10,6 +10,19 @@ import { aiRoutes } from './server/api/aiRoutes';
 import { importRoutes } from './server/api/importRoutes';
 import { qualityRoutes } from './server/api/qualityRoutes';
 import { cleaningRoutes } from './server/api/cleaningRoutes';
+import { performanceRoutes } from './server/api/performanceRoutes';
+import { authRoutes } from './server/api/authRoutes';
+import { workspaceRoutes } from './server/api/workspaceRoutes';
+import { userRoutes } from './server/api/userRoutes';
+import { projectRoutes } from './server/api/projectRoutes';
+import { shareRoutes } from './server/api/shareRoutes';
+import { reportRoutes } from './server/api/reportRoutes';
+import { notificationRoutes } from './server/api/notificationRoutes';
+import { activityRoutes } from './server/api/activityRoutes';
+import { auditRoutes } from './server/api/auditRoutes';
+import { searchRoutes } from './server/api/searchRoutes';
+import { collaborationResourceRoutes } from './server/api/collaborationResourceRoutes';
+import { authMiddleware, correlationIdMiddleware } from './server/middleware/authMiddleware';
 import { isGeminiConfigured, GEMINI_MODEL } from './server/ai/geminiClient';
 import { ConnectionManager } from './server/database/ConnectionManager';
 import { Logger } from './server/utils/logger';
@@ -37,8 +50,10 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: '50mb' }));
+  app.use(express.json({ limit: '150mb' }));
   app.use(cookieParser());
+  app.use(correlationIdMiddleware);
+  app.use(authMiddleware);
 
   // Health check route conforming to requirement 33
   app.get('/api/health', (_req, res) => {
@@ -65,6 +80,19 @@ async function startServer() {
     });
   });
 
+  // Collaboration and Authentication API routes
+  app.use('/api/auth', authRoutes);
+  app.use('/api/workspaces', workspaceRoutes);
+  app.use('/api/users', userRoutes);
+  app.use('/api/projects', projectRoutes);
+  app.use('/api/shares', shareRoutes);
+  app.use('/api/reports', reportRoutes);
+  app.use('/api/notifications', notificationRoutes);
+  app.use('/api/activity', activityRoutes);
+  app.use('/api/audit', auditRoutes);
+  app.use('/api/search', searchRoutes);
+  app.use('/api/collaboration', collaborationResourceRoutes);
+
   // Audit events route for verification & diagnostics (no secrets returned)
   app.get('/api/audit/recent', (_req, res) => {
     res.json({
@@ -82,6 +110,7 @@ async function startServer() {
   app.use('/api/cleaning', cleaningRoutes);
   app.use('/api/import', importRoutes);
   app.use('/api/database/import', importRoutes);
+  app.use('/api/performance', performanceRoutes);
 
   // Vite middleware for development or static serving for production
   if (process.env.NODE_ENV !== 'production') {

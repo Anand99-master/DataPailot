@@ -1027,16 +1027,33 @@ export class DataCleaningEngine {
    */
   public static filterRows(
     rows: Record<string, unknown>[],
-    params: FilterRowsParams
+    params: FilterRowsParams | any
   ): Record<string, unknown>[] {
-    const { action, logic, conditions } = params;
-    if (!conditions || conditions.length === 0) return rows;
+    const action = params?.action || 'keep';
+    const logic = params?.logic || 'AND';
+    let conditions = params?.conditions;
+
+    if (!conditions || conditions.length === 0) {
+      if (params?.column && params?.operator) {
+        conditions = [{
+          column: params.column,
+          operator: params.operator,
+          value: params.value,
+          value2: params.value2,
+          valueList: params.valueList
+        }];
+      } else {
+        return rows;
+      }
+    }
 
     return rows.filter(row => {
-      const matchResults = conditions.map(c => {
+      const matchResults = conditions.map((c: any) => {
         const rowVal = row[c.column];
-        if (c.operator === 'is_null') return rowVal === null || rowVal === undefined || rowVal === '';
-        if (c.operator === 'is_not_null') return rowVal !== null && rowVal !== undefined && rowVal !== '';
+        const op = String(c.operator || '').toLowerCase();
+
+        if (op === 'is_null' || op === 'isnull') return rowVal === null || rowVal === undefined || rowVal === '';
+        if (op === 'is_not_null' || op === 'isnotnull') return rowVal !== null && rowVal !== undefined && rowVal !== '';
 
         if (rowVal === null || rowVal === undefined) return false;
 
@@ -1047,18 +1064,36 @@ export class DataCleaningEngine {
         const s1 = String(rowVal).toLowerCase();
         const s2 = String(c.value ?? '').toLowerCase();
 
-        switch (c.operator) {
+        switch (op) {
           case 'equals':
+          case 'equal':
+          case 'eq':
+          case '==':
+          case '=':
             return isNum ? n1 === n2 : s1 === s2;
           case 'not_equals':
+          case 'not_equal':
+          case 'neq':
+          case '!=':
+          case '<>':
             return isNum ? n1 !== n2 : s1 !== s2;
           case 'greater_than':
+          case 'gt':
+          case '>':
             return isNum ? n1 > n2 : s1 > s2;
           case 'less_than':
+          case 'lt':
+          case '<':
             return isNum ? n1 < n2 : s1 < s2;
+          case 'greater_than_or_equal':
           case 'greater_equal':
+          case 'gte':
+          case '>=':
             return isNum ? n1 >= n2 : s1 >= s2;
+          case 'less_than_or_equal':
           case 'less_equal':
+          case 'lte':
+          case '<=':
             return isNum ? n1 <= n2 : s1 <= s2;
           case 'contains':
             return s1.includes(s2);
@@ -1071,8 +1106,9 @@ export class DataCleaningEngine {
             const max = Number(c.value2);
             return !isNaN(n1) && !isNaN(min) && !isNaN(max) && n1 >= min && n1 <= max;
           }
-          case 'in_list': {
-            const list = c.valueList || String(c.value || '').split(',').map(s => s.trim().toLowerCase());
+          case 'in_list':
+          case 'in': {
+            const list = c.valueList || String(c.value || '').split(',').map((s: string) => s.trim().toLowerCase());
             return list.includes(s1);
           }
           default:
@@ -1496,6 +1532,169 @@ export class DataCleaningEngine {
   }
 
   /**
+   * Executes a single transformation step on a slice or full dataset with parameter normalization
+   */
+  public static executeSingleStep(
+    rows: Record<string, unknown>[],
+    columns: ColumnMetadata[],
+    step: TransformStep,
+    invalidConversions: { rowIndex: number; column: string; rawValue: unknown; reason: string }[] = []
+  ): { rows: Record<string, unknown>[]; columns: ColumnMetadata[] } {
+    let currentRows = rows;
+    let currentColumns = columns;
+    const allColNames = currentColumns.map(c => c.name);
+
+    const stepType = String(step.type || '').toUpperCase();
+    const rawParams = (step.params || (step as any).parameters || {}) as any;
+
+    // Normalization mapping for aliases
+    const params = { ...rawParams };
+    if (step.column && !params.column) params.column = step.column;
+    if ((step as any).targetColumn && !params.column) params.column = (step as any).targetColumn;
+    if (params.customValue !== undefined && params.value === undefined) params.value = params.customValue;
+    if (params.fillStrategy && !params.strategy) {
+      if (params.fillStrategy === 'custom_value') params.strategy = 'custom';
+      else params.strategy = params.fillStrategy;
+    }
+    if (params.textCase && !params.caseTransform) {
+      const tc = String(params.textCase).toLowerCase();
+      if (tc === 'uppercase' || tc === 'upper') params.caseTransform = 'upper';
+      else if (tc === 'lowercase' || tc === 'lower') params.caseTransform = 'lower';
+      else if (tc === 'titlecase' || tc === 'title') params.caseTransform = 'title';
+    }
+
+    switch (stepType) {
+      case 'REMOVE_MISSING':
+        currentRows = this.removeMissing(currentRows, params, allColNames);
+        break;
+      case 'FILL_MISSING':
+        currentRows = this.fillMissing(currentRows, params);
+        break;
+      case 'REMOVE_DUPLICATES':
+        currentRows = this.removeDuplicates(currentRows, params, allColNames);
+        break;
+      case 'CONVERT_TYPE':
+        currentRows = this.convertType(currentRows, params, invalidConversions);
+        currentColumns = currentColumns.map(c =>
+          c.name === params.column ? { ...c, dataType: params.targetType } : c
+        );
+        break;
+      case 'STANDARDIZE_DATE':
+        currentRows = this.standardizeDate(currentRows, params, invalidConversions);
+        break;
+      case 'TEXT_CLEAN':
+      case 'TEXT_CASE':
+        currentRows = this.textClean(currentRows, params);
+        break;
+      case 'NUMERIC_CLEAN':
+        currentRows = this.numericClean(currentRows, params);
+        break;
+      case 'MAP_VALUES':
+        currentRows = this.mapValues(currentRows, params);
+        break;
+      case 'HANDLE_OUTLIERS':
+        currentRows = this.handleOutliers(currentRows, params);
+        break;
+      case 'RENAME_COLUMN': {
+        const res = this.renameColumn(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      case 'DROP_COLUMN': {
+        const res = this.dropColumn(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      case 'DUPLICATE_COLUMN': {
+        const res = this.duplicateColumn(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      case 'REORDER_COLUMNS': {
+        const res = this.reorderColumns(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      case 'SPLIT_COLUMN': {
+        const res = this.splitColumn(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      case 'MERGE_COLUMNS': {
+        const res = this.mergeColumns(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      case 'EXTRACT_TEXT': {
+        const res = this.extractText(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      case 'CALCULATED_COLUMN': {
+        const res = this.calculatedColumn(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      case 'CONDITIONAL_COLUMN': {
+        const res = this.conditionalColumn(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      case 'FILTER_ROWS': {
+        currentRows = this.filterRows(currentRows, params);
+        break;
+      }
+      case 'SORT_ROWS': {
+        currentRows = this.sortRows(currentRows, params);
+        break;
+      }
+      case 'RANK_ROWS': {
+        const res = this.rankRows(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      case 'DATE_EXTRACT': {
+        const res = this.dateExtract(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      case 'DATE_DIFF': {
+        const res = this.dateDiff(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      case 'PIVOT_TABLE': {
+        const res = this.pivotTable(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      case 'UNPIVOT_TABLE': {
+        const res = this.unpivotTable(currentRows, params, currentColumns);
+        currentRows = res.rows;
+        currentColumns = res.columns;
+        break;
+      }
+      default:
+        break;
+    }
+
+    return { rows: currentRows, columns: currentColumns };
+  }
+
+  /**
    * Complete Pipeline Execution with full diff & cell change tracking
    */
   public static applyPipeline(
@@ -1574,132 +1773,9 @@ export class DataCleaningEngine {
       let stepExecutionError: string | null = null;
 
       try {
-        const allColNames = currentColumns.map(c => c.name);
-
-        switch (step.type) {
-          case 'REMOVE_MISSING':
-            currentRows = this.removeMissing(currentRows, step.params, allColNames);
-            break;
-          case 'FILL_MISSING':
-            currentRows = this.fillMissing(currentRows, step.params);
-            break;
-          case 'REMOVE_DUPLICATES':
-            currentRows = this.removeDuplicates(currentRows, step.params, allColNames);
-            break;
-          case 'CONVERT_TYPE':
-            currentRows = this.convertType(currentRows, step.params, invalidConversions);
-            currentColumns = currentColumns.map(c =>
-              c.name === step.params.column ? { ...c, dataType: step.params.targetType } : c
-            );
-            break;
-          case 'STANDARDIZE_DATE':
-            currentRows = this.standardizeDate(currentRows, step.params, invalidConversions);
-            break;
-          case 'TEXT_CLEAN':
-            currentRows = this.textClean(currentRows, step.params);
-            break;
-          case 'NUMERIC_CLEAN':
-            currentRows = this.numericClean(currentRows, step.params);
-            break;
-          case 'MAP_VALUES':
-            currentRows = this.mapValues(currentRows, step.params);
-            break;
-          case 'HANDLE_OUTLIERS':
-            currentRows = this.handleOutliers(currentRows, step.params);
-            break;
-          case 'RENAME_COLUMN': {
-            const res = this.renameColumn(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-          case 'DROP_COLUMN': {
-            const res = this.dropColumn(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-          case 'DUPLICATE_COLUMN': {
-            const res = this.duplicateColumn(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-          case 'REORDER_COLUMNS': {
-            const res = this.reorderColumns(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-          case 'SPLIT_COLUMN': {
-            const res = this.splitColumn(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-          case 'MERGE_COLUMNS': {
-            const res = this.mergeColumns(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-          case 'EXTRACT_TEXT': {
-            const res = this.extractText(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-          case 'CALCULATED_COLUMN': {
-            const res = this.calculatedColumn(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-          case 'CONDITIONAL_COLUMN': {
-            const res = this.conditionalColumn(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-          case 'FILTER_ROWS': {
-            currentRows = this.filterRows(currentRows, step.params);
-            break;
-          }
-          case 'SORT_ROWS': {
-            currentRows = this.sortRows(currentRows, step.params);
-            break;
-          }
-          case 'RANK_ROWS': {
-            const res = this.rankRows(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-          case 'DATE_EXTRACT': {
-            const res = this.dateExtract(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-          case 'DATE_DIFF': {
-            const res = this.dateDiff(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-          case 'PIVOT_TABLE': {
-            const res = this.pivotTable(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-          case 'UNPIVOT_TABLE': {
-            const res = this.unpivotTable(currentRows, step.params, currentColumns);
-            currentRows = res.rows;
-            currentColumns = res.columns;
-            break;
-          }
-        }
+        const res = this.executeSingleStep(currentRows, currentColumns, step, invalidConversions);
+        currentRows = res.rows;
+        currentColumns = res.columns;
       } catch (err: any) {
         stepExecutionError = err.message || 'Error executing transformation step.';
         failedStepId = step.id;

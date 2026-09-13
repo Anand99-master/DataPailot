@@ -1,6 +1,7 @@
 import { UnifiedDataLayer } from '../import/UnifiedDataLayer';
 import { DataProfiler } from '../import/DataProfiler';
-import { DataCleaningEngine } from '../../src/utils/dataCleaningEngine';
+import { ChunkProcessingEngine } from './ChunkProcessingEngine';
+import { PerformanceJobManager } from './PerformanceJobManager';
 import { TransformStep, CleaningPreviewResult, CleanedDatasetSaveResult } from '../../src/types/cleaning';
 import { ImportedDataset, ExportFormat } from '../../src/types/import';
 import { ImportSecurity } from '../import/ImportSecurity';
@@ -10,46 +11,103 @@ import { Logger } from '../utils/logger';
 export class DataCleaningService {
   /**
    * Generates a before-and-after cleaning preview with comparative data quality scores
+   * Optimized for large datasets using ChunkProcessingEngine and bounded diff arrays.
    */
   public static async previewPipeline(
     sessionId: string,
     datasetId: string,
-    steps: TransformStep[]
+    steps: TransformStep[],
+    options: {
+      jobId?: string;
+      cancellationToken?: { isCancelled: () => boolean };
+      maxRows?: number;
+    } = {}
   ): Promise<CleaningPreviewResult> {
+    const startTime = Date.now();
     const udl = UnifiedDataLayer.getInstance();
     const dataset = udl.getDataset(sessionId, datasetId);
     if (!dataset) {
       throw new Error(`Dataset '${datasetId}' not found.`);
     }
 
+    const jobManager = PerformanceJobManager.getInstance();
+
     // Fetch all rows from SQLite
-    const queryRes = await udl.executeQuery(sessionId, `SELECT * FROM "${dataset.tableName}"`, { maxRows: 100000 });
+    const maxRows = options.maxRows || 1000000;
+    const queryRes = await udl.executeQuery(sessionId, `SELECT * FROM "${dataset.tableName}"`, { maxRows });
     const allRows = queryRes.rows;
 
-    // Run transformation engine
-    const previewResult = DataCleaningEngine.applyPipeline(allRows, dataset.columns, steps);
+    // Run ChunkProcessingEngine
+    const chunkRes = ChunkProcessingEngine.applyPipelineChunked(allRows, dataset.columns, steps, {
+      cancellationToken: {
+        isCancelled: () => {
+          if (options.cancellationToken?.isCancelled()) return true;
+          if (options.jobId && jobManager.isCancelled(options.jobId)) return true;
+          return false;
+        }
+      },
+      onProgress: (p) => {
+        if (options.jobId) {
+          jobManager.updateProgress(options.jobId, p.rowsProcessed, {
+            totalRows: p.totalRows,
+            stepNumber: p.stepNumber,
+            totalSteps: p.totalSteps,
+            currentStepName: p.currentStepName
+          });
+        }
+      }
+    });
 
-    // Profile before and after
-    previewResult.qualityBefore = dataset.profile || DataProfiler.profile(
+    if (chunkRes.cancelled) {
+      if (options.jobId) jobManager.markJobCancelled(options.jobId);
+      throw new Error('Pipeline preview was cancelled by user.');
+    }
+
+    // Profile before and after (using sample if large dataset)
+    const qualityBefore = dataset.profile || DataProfiler.profile(
       dataset.datasetId,
       dataset.name,
       dataset.columns,
       allRows
     );
 
-    previewResult.qualityAfter = DataProfiler.profile(
+    const qualityAfter = DataProfiler.profile(
       `${dataset.datasetId}_cleaned_preview`,
       `${dataset.name} (Cleaned)`,
-      previewResult.columns,
-      previewResult.cleanedRows
+      chunkRes.columns,
+      chunkRes.cleanedRows
     );
 
-    if (previewResult.summary) {
-      previewResult.summary.dataQualityBefore = previewResult.qualityBefore.overallQualityScore;
-      previewResult.summary.dataQualityAfter = previewResult.qualityAfter.overallQualityScore;
+    if (chunkRes.summary) {
+      chunkRes.summary.dataQualityBefore = qualityBefore.overallQualityScore || 0;
+      chunkRes.summary.dataQualityAfter = qualityAfter.overallQualityScore || 0;
     }
 
-    return previewResult;
+    const duration = Date.now() - startTime;
+    jobManager.recordMetric({
+      operation: 'PREVIEW_PIPELINE',
+      datasetId,
+      rowCount: allRows.length,
+      durationMs: duration,
+      rowsPerSecond: duration > 0 ? Math.round((allRows.length / (duration / 1000))) : allRows.length,
+      strategyUsed: 'Chunked Execution Pipeline'
+    });
+
+    return {
+      originalRows: allRows.slice(0, 50),
+      cleanedRows: chunkRes.cleanedRows.slice(0, 50),
+      columns: chunkRes.columns,
+      totalOriginalRows: chunkRes.totalOriginalRows,
+      totalCleanedRows: chunkRes.totalCleanedRows,
+      affectedRowCount: chunkRes.affectedRowCount,
+      affectedColumnCount: chunkRes.affectedColumnCount,
+      changedCells: chunkRes.changedCells,
+      stepMetrics: chunkRes.stepMetrics,
+      summary: chunkRes.summary,
+      qualityBefore,
+      qualityAfter,
+      executionTimeMs: duration
+    };
   }
 
   /**
@@ -61,33 +119,68 @@ export class DataCleaningService {
     sourceDatasetId: string,
     newDatasetName: string,
     steps: TransformStep[],
-    pipelineMetadata?: { pipelineId?: string; pipelineName?: string; pipelineVersion?: number }
+    pipelineMetadata?: { pipelineId?: string; pipelineName?: string; pipelineVersion?: number; jobId?: string }
   ): Promise<CleanedDatasetSaveResult> {
+    const startTime = Date.now();
     const udl = UnifiedDataLayer.getInstance();
     const source = udl.getDataset(sessionId, sourceDatasetId);
     if (!source) {
       throw new Error(`Source dataset '${sourceDatasetId}' not found.`);
     }
 
+    const jobManager = PerformanceJobManager.getInstance();
     const name = newDatasetName?.trim() || `${source.name}_cleaned`;
 
     // Fetch all source rows
-    const queryRes = await udl.executeQuery(sessionId, `SELECT * FROM "${source.tableName}"`, { maxRows: 500000 });
+    const queryRes = await udl.executeQuery(sessionId, `SELECT * FROM "${source.tableName}"`, { maxRows: 1000000 });
     const allRows = queryRes.rows;
 
-    // Apply pipeline
-    const previewResult = DataCleaningEngine.applyPipeline(allRows, source.columns, steps);
+    // Apply chunked pipeline
+    const chunkRes = ChunkProcessingEngine.applyPipelineChunked(allRows, source.columns, steps, {
+      cancellationToken: {
+        isCancelled: () => {
+          if (pipelineMetadata?.jobId && jobManager.isCancelled(pipelineMetadata.jobId)) return true;
+          return false;
+        }
+      },
+      onProgress: (p) => {
+        if (pipelineMetadata?.jobId) {
+          jobManager.updateProgress(pipelineMetadata.jobId, p.rowsProcessed, {
+            totalRows: p.totalRows,
+            stepNumber: p.stepNumber,
+            totalSteps: p.totalSteps,
+            currentStepName: p.currentStepName
+          });
+        }
+      }
+    });
+
+    if (chunkRes.cancelled) {
+      if (pipelineMetadata?.jobId) jobManager.markJobCancelled(pipelineMetadata.jobId);
+      throw new Error('Dataset saving was cancelled by user.');
+    }
 
     // Register new dataset in Unified Data Layer
     const newDataset = await udl.registerDataset(sessionId, {
       sourceName: name,
       fileType: source.fileType,
-      columns: previewResult.columns,
-      rows: previewResult.cleanedRows,
-      fileSize: source.fileSize
+      columns: chunkRes.columns,
+      rows: chunkRes.cleanedRows,
+      fileSize: source.fileSize,
+      jobId: pipelineMetadata?.jobId
     });
 
     const activeStepsCount = steps.filter(s => s.enabled).length;
+    const duration = Date.now() - startTime;
+
+    jobManager.recordMetric({
+      operation: 'SAVE_CLEANED_DATASET',
+      datasetId: newDataset.datasetId,
+      rowCount: newDataset.rowCount,
+      durationMs: duration,
+      rowsPerSecond: duration > 0 ? Math.round((newDataset.rowCount / (duration / 1000))) : newDataset.rowCount,
+      strategyUsed: 'Chunked Transformation + SQLite Batch Registration'
+    });
 
     Logger.info('Cleaned dataset created and registered in UnifiedDataLayer', {
       sessionId,
@@ -95,14 +188,15 @@ export class DataCleaningService {
       newDatasetId: newDataset.datasetId,
       newTableName: newDataset.tableName,
       stepsApplied: activeStepsCount,
-      rowCount: newDataset.rowCount
+      rowCount: newDataset.rowCount,
+      durationMs: duration
     });
 
     return {
       originalDatasetId: sourceDatasetId,
       newDataset,
       stepsApplied: activeStepsCount,
-      message: `Successfully created cleaned dataset '${name}' with ${newDataset.rowCount} rows.`,
+      message: `Successfully created cleaned dataset '${name}' with ${newDataset.rowCount.toLocaleString()} rows.`,
       lineage: {
         sourceDatasetId,
         sourceDatasetName: source.name,
@@ -123,26 +217,42 @@ export class DataCleaningService {
     sourceDatasetId: string,
     steps: TransformStep[],
     format: ExportFormat,
-    customName?: string
+    customName?: string,
+    options: { jobId?: string } = {}
   ): Promise<{ mimeType: string; fileName: string; content: string | Buffer }> {
+    const startTime = Date.now();
     const udl = UnifiedDataLayer.getInstance();
     const source = udl.getDataset(sessionId, sourceDatasetId);
     if (!source) {
       throw new Error(`Source dataset '${sourceDatasetId}' not found.`);
     }
 
-    const queryRes = await udl.executeQuery(sessionId, `SELECT * FROM "${source.tableName}"`, { maxRows: 500000 });
-    const previewResult = DataCleaningEngine.applyPipeline(queryRes.rows, source.columns, steps);
-    const rows = previewResult.cleanedRows;
-    const columns = previewResult.columns;
+    const jobManager = PerformanceJobManager.getInstance();
+    const queryRes = await udl.executeQuery(sessionId, `SELECT * FROM "${source.tableName}"`, { maxRows: 1000000 });
+    
+    const chunkRes = ChunkProcessingEngine.applyPipelineChunked(queryRes.rows, source.columns, steps, {
+      cancellationToken: {
+        isCancelled: () => {
+          if (options.jobId && jobManager.isCancelled(options.jobId)) return true;
+          return false;
+        }
+      }
+    });
 
+    if (chunkRes.cancelled) {
+      throw new Error('Export was cancelled by user.');
+    }
+
+    const rows = chunkRes.cleanedRows;
+    const columns = chunkRes.columns;
     const baseName = (customName || `${source.name}_cleaned`).replace(/[^a-zA-Z0-9_-]/g, '_');
 
     if (format === 'json') {
+      const content = JSON.stringify(rows, null, 2);
       return {
         mimeType: 'application/json; charset=utf-8',
         fileName: `${baseName}.json`,
-        content: JSON.stringify(rows, null, 2)
+        content
       };
     }
 
