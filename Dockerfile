@@ -32,12 +32,15 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Install production runtime dependencies & sqlite support
-RUN apk add --no-cache curl
+# Install production runtime dependencies, curl, and build tools for native modules (sqlite3, oracledb, mssql)
+RUN apk add --no-cache curl python3 make g++ build-base
 
 # Copy package files and install production dependencies only
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev && npm cache clean --force
+
+# Remove build tools to keep final image slim and secure
+RUN apk del python3 make g++ build-base
 
 # Copy built artifacts from builder stage
 COPY --from=builder /app/dist ./dist
