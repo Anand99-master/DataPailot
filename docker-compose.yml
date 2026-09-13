@@ -3,8 +3,6 @@
 # Production-like local deployment stack with PostgreSQL & DataPilot
 # ==============================================================================
 
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -12,7 +10,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-datapilot}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-datapilot_secure_password_change_in_prod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-datapilot_prod}
     ports:
       - "5432:5432"
@@ -38,8 +36,8 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - APP_URL=${APP_URL:-http://localhost:3000}
-      - DATABASE_URL=${DATABASE_URL:-postgresql://datapilot:datapilot_secure_password_change_in_prod@postgres:5432/datapilot_prod}
-      - SESSION_SECRET=${SESSION_SECRET:-super_secret_session_key_change_in_production_12345}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://datapilot:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-datapilot_prod}}
+      - SESSION_SECRET=${SESSION_SECRET}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-20}
       - DB_CONNECTION_TIMEOUT=${DB_CONNECTION_TIMEOUT:-5000}
