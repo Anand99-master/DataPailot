@@ -4,7 +4,7 @@
 # ==============================================================================
 
 # Stage 1: Build Stage
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -15,7 +15,7 @@ RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json* ./
 
 # Install all dependencies (including devDependencies for building frontend/backend)
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 # Copy source files
 COPY . .
@@ -24,7 +24,7 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Production Runner Stage
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
@@ -37,7 +37,8 @@ RUN apk add --no-cache curl python3 make g++ build-base
 
 # Copy package files and install production dependencies only
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev && npm cache clean --force
+COPY --from=builder /app/node_modules ./node_modules
+RUN npm cache clean --force
 
 # Remove build tools to keep final image slim and secure
 RUN apk del python3 make g++ build-base
@@ -54,7 +55,7 @@ COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 
 # Create data directory for local sqlite fallback with correct permissions
-RUN mkdir -p /app/data && chown -R node:node /app
+RUN mkdir -p /app/data && chown -R node:node /app/data /app/dist /app/server /app/src /app/index.html /app/server.ts /app/docker-entrypoint.sh
 
 # Switch to non-root user
 USER node

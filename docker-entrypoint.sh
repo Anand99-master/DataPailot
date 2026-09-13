@@ -3,7 +3,6 @@ set -e
 
 echo "Starting DataPilot Container Entrypoint..."
 
-# If DATABASE_URL is provided, run migration validation and apply pending migrations safely
 if [ -n "$DATABASE_URL" ]; then
   echo "Database URL configured. Validating migrations..."
   npm run migrate:validate || {
@@ -19,7 +18,6 @@ if [ -n "$DATABASE_URL" ]; then
   echo "Migrations successfully applied."
 else
   echo "No DATABASE_URL configured. Skipping database migrations (using local SQLite fallback)."
-  # Ensure local sqlite migrations run for collaboration store if running standalone
   npm run migrate:up || true
 fi
 

@@ -8,10 +8,9 @@ services:
     image: postgres:15-alpine
     container_name: datapilot_postgres
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-datapilot}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-datapilot_prod}
+    env_file:
+      - path: .env.docker
+        required: true
     ports:
       - "5432:5432"
     volumes:
@@ -30,20 +29,14 @@ services:
       dockerfile: Dockerfile
     container_name: datapilot_app
     restart: unless-stopped
+    env_file:
+      - path: .env.docker
+        required: true
     ports:
       - "${PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - APP_URL=${APP_URL:-http://localhost:3000}
-      - DATABASE_URL=${DATABASE_URL:-postgresql://datapilot:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-datapilot_prod}}
-      - SESSION_SECRET=${SESSION_SECRET}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - DB_POOL_SIZE=${DB_POOL_SIZE:-20}
-      - DB_CONNECTION_TIMEOUT=${DB_CONNECTION_TIMEOUT:-5000}
-      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
-      - JOB_CONCURRENCY=${JOB_CONCURRENCY:-5}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
     depends_on:
       postgres:
         condition: service_healthy
