@@ -44,6 +44,11 @@ export class DataCleaningService {
       previewResult.cleanedRows
     );
 
+    if (previewResult.summary) {
+      previewResult.summary.dataQualityBefore = previewResult.qualityBefore.overallQualityScore;
+      previewResult.summary.dataQualityAfter = previewResult.qualityAfter.overallQualityScore;
+    }
+
     return previewResult;
   }
 
@@ -55,7 +60,8 @@ export class DataCleaningService {
     sessionId: string,
     sourceDatasetId: string,
     newDatasetName: string,
-    steps: TransformStep[]
+    steps: TransformStep[],
+    pipelineMetadata?: { pipelineId?: string; pipelineName?: string; pipelineVersion?: number }
   ): Promise<CleanedDatasetSaveResult> {
     const udl = UnifiedDataLayer.getInstance();
     const source = udl.getDataset(sessionId, sourceDatasetId);
@@ -81,20 +87,31 @@ export class DataCleaningService {
       fileSize: source.fileSize
     });
 
+    const activeStepsCount = steps.filter(s => s.enabled).length;
+
     Logger.info('Cleaned dataset created and registered in UnifiedDataLayer', {
       sessionId,
       sourceDatasetId,
       newDatasetId: newDataset.datasetId,
       newTableName: newDataset.tableName,
-      stepsApplied: steps.filter(s => s.enabled).length,
+      stepsApplied: activeStepsCount,
       rowCount: newDataset.rowCount
     });
 
     return {
       originalDatasetId: sourceDatasetId,
       newDataset,
-      stepsApplied: steps.filter(s => s.enabled).length,
-      message: `Successfully created cleaned dataset '${name}' with ${newDataset.rowCount} rows.`
+      stepsApplied: activeStepsCount,
+      message: `Successfully created cleaned dataset '${name}' with ${newDataset.rowCount} rows.`,
+      lineage: {
+        sourceDatasetId,
+        sourceDatasetName: source.name,
+        pipelineId: pipelineMetadata?.pipelineId,
+        pipelineName: pipelineMetadata?.pipelineName,
+        pipelineVersion: pipelineMetadata?.pipelineVersion,
+        stepsCount: activeStepsCount,
+        createdAt: new Date().toISOString()
+      }
     };
   }
 

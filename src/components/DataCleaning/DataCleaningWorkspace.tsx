@@ -30,6 +30,7 @@ import { ImportedDataset, ExportFormat } from '../../types/import';
 import { TransformStep, CleaningPreviewResult, CleaningTabId } from '../../types/cleaning';
 import { CleaningApiClient } from '../../services/cleaningApi';
 import { CleaningOverviewTab } from './tabs/CleaningOverviewTab';
+import { AiCleaningAssistantTab } from './tabs/AiCleaningAssistantTab';
 import { MissingValuesTab } from './tabs/MissingValuesTab';
 import { DuplicatesTab } from './tabs/DuplicatesTab';
 import { DataTypesTab } from './tabs/DataTypesTab';
@@ -91,6 +92,11 @@ export const DataCleaningWorkspace: React.FC<DataCleaningWorkspaceProps> = ({
     setStatusMessage({ type: 'info', text: `Added "${step.description}" to pipeline.` });
   };
 
+  const handleAddMultipleSteps = (newSteps: TransformStep[]) => {
+    pushUndoState([...pipeline, ...newSteps]);
+    setStatusMessage({ type: 'info', text: `Added ${newSteps.length} steps to pipeline.` });
+  };
+
   const handleToggleStep = (stepId: string) => {
     const updated = pipeline.map(s => s.id === stepId ? { ...s, enabled: !s.enabled } : s);
     pushUndoState(updated);
@@ -109,6 +115,35 @@ export const DataCleaningWorkspace: React.FC<DataCleaningWorkspaceProps> = ({
     copy[index] = copy[targetIdx];
     copy[targetIdx] = item;
     pushUndoState(copy);
+  };
+
+  const handleUpdatePipeline = (newPipeline: TransformStep[], actionMsg?: string) => {
+    pushUndoState(newPipeline);
+    if (actionMsg) {
+      setStatusMessage({ type: 'info', text: actionMsg });
+    }
+  };
+
+  const handleDuplicateStep = (index: number) => {
+    if (index < 0 || index >= pipeline.length) return;
+    const stepToDup = pipeline[index];
+    const newStep: TransformStep = {
+      ...stepToDup,
+      id: `step_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      description: `${stepToDup.description} (Copy)`,
+      createdAt: new Date().toISOString()
+    };
+    const updated = [...pipeline.slice(0, index + 1), newStep, ...pipeline.slice(index + 1)];
+    pushUndoState(updated);
+    setStatusMessage({ type: 'info', text: `Duplicated step "${stepToDup.description}".` });
+  };
+
+  const handleEditStep = (index: number, updatedStep: TransformStep) => {
+    if (index < 0 || index >= pipeline.length) return;
+    const updated = [...pipeline];
+    updated[index] = updatedStep;
+    pushUndoState(updated);
+    setStatusMessage({ type: 'info', text: `Updated step "${updatedStep.description}".` });
   };
 
   const handleClearAll = () => {
@@ -207,6 +242,7 @@ export const DataCleaningWorkspace: React.FC<DataCleaningWorkspaceProps> = ({
 
   const tabs: { id: CleaningTabId; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: 'overview', label: 'Overview & Health', icon: <Sparkles className="w-4 h-4" /> },
+    { id: 'ai-assistant', label: 'AI Assistant', icon: <Wand2 className="w-4 h-4 text-indigo-400" /> },
     { id: 'columns', label: 'Column Ops', icon: <Columns className="w-4 h-4" /> },
     { id: 'calculated', label: 'Calculated Columns', icon: <Calculator className="w-4 h-4" /> },
     { id: 'conditional', label: 'Conditional Columns', icon: <GitBranch className="w-4 h-4" /> },
@@ -383,6 +419,16 @@ export const DataCleaningWorkspace: React.FC<DataCleaningWorkspaceProps> = ({
           />
         )}
 
+        {activeTab === 'ai-assistant' && (
+          <AiCleaningAssistantTab
+            dataset={dataset}
+            pipeline={pipeline}
+            onAddStep={handleAddStep}
+            onAddMultipleSteps={handleAddMultipleSteps}
+            onNavigateToPipeline={() => setActiveTab('pipeline')}
+          />
+        )}
+
         {activeTab === 'columns' && (
           <ColumnOperationsTab dataset={dataset} onAddStep={handleAddStep} />
         )}
@@ -445,12 +491,21 @@ export const DataCleaningWorkspace: React.FC<DataCleaningWorkspaceProps> = ({
 
         {activeTab === 'pipeline' && (
           <PipelineTab
+            dataset={dataset}
             pipeline={pipeline}
+            preview={preview}
+            onUpdatePipeline={handleUpdatePipeline}
             onToggleStep={handleToggleStep}
             onRemoveStep={handleRemoveStep}
             onMoveStep={handleMoveStep}
+            onDuplicateStep={handleDuplicateStep}
+            onEditStep={handleEditStep}
             onClearAll={handleClearAll}
             onPreview={handleRunPreview}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            canUndo={undoStack.length > 0}
+            canRedo={redoStack.length > 0}
             isLoadingPreview={isLoadingPreview}
           />
         )}

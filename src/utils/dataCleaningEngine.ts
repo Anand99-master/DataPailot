@@ -2,6 +2,8 @@ import {
   TransformStep,
   CleaningPreviewResult,
   CellChange,
+  StepExecutionMetric,
+  PipelineExecutionSummary,
   RemoveMissingParams,
   FillMissingParams,
   RemoveDuplicatesParams,
@@ -1507,135 +1509,254 @@ export class DataCleaningEngine {
     let currentColumns = columns.map(c => ({ ...c }));
 
     const invalidConversions: { rowIndex: number; column: string; rawValue: unknown; reason: string }[] = [];
-    const activeSteps = steps.filter(s => s.enabled);
+    const stepMetrics: StepExecutionMetric[] = [];
+    let failedStepId: string | undefined;
+    let failedStepReason: string | undefined;
 
-    for (const step of activeSteps) {
-      const allColNames = currentColumns.map(c => c.name);
+    for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+      const step = steps[stepIndex];
+      const stepNum = stepIndex + 1;
+      const rowsBefore = currentRows.length;
+      const colsBefore = currentColumns.length;
+      const colNamesBefore = currentColumns.map(c => c.name);
+      const stepStart = Date.now();
 
-      switch (step.type) {
-        case 'REMOVE_MISSING':
-          currentRows = this.removeMissing(currentRows, step.params, allColNames);
-          break;
-        case 'FILL_MISSING':
-          currentRows = this.fillMissing(currentRows, step.params);
-          break;
-        case 'REMOVE_DUPLICATES':
-          currentRows = this.removeDuplicates(currentRows, step.params, allColNames);
-          break;
-        case 'CONVERT_TYPE':
-          currentRows = this.convertType(currentRows, step.params, invalidConversions);
-          currentColumns = currentColumns.map(c =>
-            c.name === step.params.column ? { ...c, dataType: step.params.targetType } : c
-          );
-          break;
-        case 'STANDARDIZE_DATE':
-          currentRows = this.standardizeDate(currentRows, step.params, invalidConversions);
-          break;
-        case 'TEXT_CLEAN':
-          currentRows = this.textClean(currentRows, step.params);
-          break;
-        case 'NUMERIC_CLEAN':
-          currentRows = this.numericClean(currentRows, step.params);
-          break;
-        case 'MAP_VALUES':
-          currentRows = this.mapValues(currentRows, step.params);
-          break;
-        case 'HANDLE_OUTLIERS':
-          currentRows = this.handleOutliers(currentRows, step.params);
-          break;
-        case 'RENAME_COLUMN': {
-          const res = this.renameColumn(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
+      if (!step.enabled) {
+        stepMetrics.push({
+          stepId: step.id,
+          stepNumber: stepNum,
+          stepType: step.type,
+          description: step.description,
+          targetColumn: step.column || step.params?.column || step.params?.oldName || step.params?.sourceColumn || step.params?.newColumnName,
+          enabled: false,
+          rowsBefore,
+          rowsAfter: rowsBefore,
+          rowsModified: 0,
+          rowsRemoved: 0,
+          colsBefore,
+          colsAfter: colsBefore,
+          columnsAdded: [],
+          columnsRemoved: [],
+          validationStatus: 'valid',
+          validationMessage: 'Step disabled',
+          executionStatus: 'skipped',
+          durationMs: 0
+        });
+        continue;
+      }
+
+      // If a previous step failed, skip remaining steps safely
+      if (failedStepId) {
+        stepMetrics.push({
+          stepId: step.id,
+          stepNumber: stepNum,
+          stepType: step.type,
+          description: step.description,
+          targetColumn: step.column || step.params?.column || step.params?.oldName || step.params?.sourceColumn || step.params?.newColumnName,
+          enabled: true,
+          rowsBefore,
+          rowsAfter: rowsBefore,
+          rowsModified: 0,
+          rowsRemoved: 0,
+          colsBefore,
+          colsAfter: colsBefore,
+          columnsAdded: [],
+          columnsRemoved: [],
+          validationStatus: 'invalid',
+          validationMessage: 'Skipped due to earlier step failure',
+          executionStatus: 'skipped',
+          durationMs: 0
+        });
+        continue;
+      }
+
+      const prevRowsSnapshot = this.cloneRows(currentRows);
+      let stepExecutionError: string | null = null;
+
+      try {
+        const allColNames = currentColumns.map(c => c.name);
+
+        switch (step.type) {
+          case 'REMOVE_MISSING':
+            currentRows = this.removeMissing(currentRows, step.params, allColNames);
+            break;
+          case 'FILL_MISSING':
+            currentRows = this.fillMissing(currentRows, step.params);
+            break;
+          case 'REMOVE_DUPLICATES':
+            currentRows = this.removeDuplicates(currentRows, step.params, allColNames);
+            break;
+          case 'CONVERT_TYPE':
+            currentRows = this.convertType(currentRows, step.params, invalidConversions);
+            currentColumns = currentColumns.map(c =>
+              c.name === step.params.column ? { ...c, dataType: step.params.targetType } : c
+            );
+            break;
+          case 'STANDARDIZE_DATE':
+            currentRows = this.standardizeDate(currentRows, step.params, invalidConversions);
+            break;
+          case 'TEXT_CLEAN':
+            currentRows = this.textClean(currentRows, step.params);
+            break;
+          case 'NUMERIC_CLEAN':
+            currentRows = this.numericClean(currentRows, step.params);
+            break;
+          case 'MAP_VALUES':
+            currentRows = this.mapValues(currentRows, step.params);
+            break;
+          case 'HANDLE_OUTLIERS':
+            currentRows = this.handleOutliers(currentRows, step.params);
+            break;
+          case 'RENAME_COLUMN': {
+            const res = this.renameColumn(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
+          case 'DROP_COLUMN': {
+            const res = this.dropColumn(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
+          case 'DUPLICATE_COLUMN': {
+            const res = this.duplicateColumn(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
+          case 'REORDER_COLUMNS': {
+            const res = this.reorderColumns(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
+          case 'SPLIT_COLUMN': {
+            const res = this.splitColumn(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
+          case 'MERGE_COLUMNS': {
+            const res = this.mergeColumns(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
+          case 'EXTRACT_TEXT': {
+            const res = this.extractText(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
+          case 'CALCULATED_COLUMN': {
+            const res = this.calculatedColumn(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
+          case 'CONDITIONAL_COLUMN': {
+            const res = this.conditionalColumn(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
+          case 'FILTER_ROWS': {
+            currentRows = this.filterRows(currentRows, step.params);
+            break;
+          }
+          case 'SORT_ROWS': {
+            currentRows = this.sortRows(currentRows, step.params);
+            break;
+          }
+          case 'RANK_ROWS': {
+            const res = this.rankRows(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
+          case 'DATE_EXTRACT': {
+            const res = this.dateExtract(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
+          case 'DATE_DIFF': {
+            const res = this.dateDiff(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
+          case 'PIVOT_TABLE': {
+            const res = this.pivotTable(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
+          case 'UNPIVOT_TABLE': {
+            const res = this.unpivotTable(currentRows, step.params, currentColumns);
+            currentRows = res.rows;
+            currentColumns = res.columns;
+            break;
+          }
         }
-        case 'DROP_COLUMN': {
-          const res = this.dropColumn(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
-        }
-        case 'DUPLICATE_COLUMN': {
-          const res = this.duplicateColumn(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
-        }
-        case 'REORDER_COLUMNS': {
-          const res = this.reorderColumns(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
-        }
-        case 'SPLIT_COLUMN': {
-          const res = this.splitColumn(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
-        }
-        case 'MERGE_COLUMNS': {
-          const res = this.mergeColumns(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
-        }
-        case 'EXTRACT_TEXT': {
-          const res = this.extractText(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
-        }
-        case 'CALCULATED_COLUMN': {
-          const res = this.calculatedColumn(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
-        }
-        case 'CONDITIONAL_COLUMN': {
-          const res = this.conditionalColumn(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
-        }
-        case 'FILTER_ROWS': {
-          currentRows = this.filterRows(currentRows, step.params);
-          break;
-        }
-        case 'SORT_ROWS': {
-          currentRows = this.sortRows(currentRows, step.params);
-          break;
-        }
-        case 'RANK_ROWS': {
-          const res = this.rankRows(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
-        }
-        case 'DATE_EXTRACT': {
-          const res = this.dateExtract(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
-        }
-        case 'DATE_DIFF': {
-          const res = this.dateDiff(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
-        }
-        case 'PIVOT_TABLE': {
-          const res = this.pivotTable(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
-        }
-        case 'UNPIVOT_TABLE': {
-          const res = this.unpivotTable(currentRows, step.params, currentColumns);
-          currentRows = res.rows;
-          currentColumns = res.columns;
-          break;
+      } catch (err: any) {
+        stepExecutionError = err.message || 'Error executing transformation step.';
+        failedStepId = step.id;
+        failedStepReason = stepExecutionError;
+        // Revert to state before this step
+        currentRows = prevRowsSnapshot;
+      }
+
+      const rowsAfter = currentRows.length;
+      const colsAfter = currentColumns.length;
+      const colNamesAfter = currentColumns.map(c => c.name);
+
+      const columnsAdded = colNamesAfter.filter(c => !colNamesBefore.includes(c));
+      const columnsRemoved = colNamesBefore.filter(c => !colNamesAfter.includes(c));
+
+      // Calculate modified rows in this step
+      let rowsModified = 0;
+      if (!stepExecutionError && rowsBefore === rowsAfter) {
+        const commonColsThisStep = colNamesBefore.filter(c => colNamesAfter.includes(c));
+        for (let r = 0; r < rowsBefore; r++) {
+          const r1 = prevRowsSnapshot[r];
+          const r2 = currentRows[r];
+          let isRowMod = false;
+          for (const c of commonColsThisStep) {
+            if (r1[c] !== r2[c]) {
+              isRowMod = true;
+              break;
+            }
+          }
+          if (isRowMod) rowsModified++;
         }
       }
+
+      const rowsRemoved = Math.max(0, rowsBefore - rowsAfter);
+      const stepDuration = Date.now() - stepStart;
+
+      stepMetrics.push({
+        stepId: step.id,
+        stepNumber: stepNum,
+        stepType: step.type,
+        description: step.description,
+        targetColumn: step.column || step.params?.column || step.params?.oldName || step.params?.sourceColumn || step.params?.newColumnName,
+        enabled: true,
+        rowsBefore,
+        rowsAfter,
+        rowsModified,
+        rowsRemoved,
+        colsBefore,
+        colsAfter,
+        columnsAdded,
+        columnsRemoved,
+        validationStatus: stepExecutionError ? 'invalid' : 'valid',
+        validationMessage: stepExecutionError || 'Successfully executed',
+        executionStatus: stepExecutionError ? 'failed' : 'success',
+        error: stepExecutionError || undefined,
+        durationMs: stepDuration
+      });
     }
 
     // Compute cell changes for common columns
@@ -1668,6 +1789,30 @@ export class DataCleaningEngine {
     const rowDiff = Math.abs(originalRows.length - currentRows.length);
     const colDiff = Math.abs(columns.length - currentColumns.length);
     const totalAffectedRows = affectedRowsSet.size + rowDiff;
+    const finalColsNames = currentColumns.map(c => c.name);
+    const colsAddedCount = finalColsNames.filter(c => !originalColNames.includes(c)).length;
+    const colsRemovedCount = originalColNames.filter(c => !finalColsNames.includes(c)).length;
+
+    const summary: PipelineExecutionSummary = {
+      originalRows: originalRows.length,
+      finalRows: currentRows.length,
+      rowsModified: affectedRowsSet.size,
+      rowsRemoved: Math.max(0, originalRows.length - currentRows.length),
+      originalCols: columns.length,
+      finalCols: currentColumns.length,
+      columnsAdded: colsAddedCount,
+      columnsRemoved: colsRemovedCount,
+      dataQualityBefore: 0,
+      dataQualityAfter: 0,
+      totalTransformations: steps.length,
+      enabledSteps: steps.filter(s => s.enabled).length,
+      disabledSteps: steps.filter(s => !s.enabled).length,
+      status: failedStepId ? 'failed' : 'success',
+      stepMetrics,
+      executionTimeMs: Date.now() - startTime,
+      failedStepId,
+      failedStepReason
+    };
 
     return {
       originalRows,
@@ -1679,6 +1824,8 @@ export class DataCleaningEngine {
       affectedColumnCount: affectedColsSet.size + colDiff,
       changedCells,
       invalidConversions,
+      stepMetrics,
+      summary,
       executionTimeMs: Date.now() - startTime
     };
   }

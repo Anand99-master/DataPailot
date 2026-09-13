@@ -295,10 +295,104 @@ export interface TransformStep {
   params: any;
   enabled: boolean;
   createdAt: string;
+  validationStatus?: 'valid' | 'warning' | 'invalid';
+  validationMessage?: string;
+  isAiRecommended?: boolean;
+  aiRecommendationId?: string;
+}
+
+export interface StepExecutionMetric {
+  stepId: string;
+  stepNumber: number;
+  stepType: TransformType;
+  description: string;
+  targetColumn?: string;
+  enabled: boolean;
+  rowsBefore: number;
+  rowsAfter: number;
+  rowsModified: number;
+  rowsRemoved: number;
+  colsBefore: number;
+  colsAfter: number;
+  columnsAdded: string[];
+  columnsRemoved: string[];
+  validationStatus: 'valid' | 'warning' | 'invalid';
+  validationMessage?: string;
+  executionStatus: 'success' | 'failed' | 'skipped';
+  error?: string;
+  durationMs: number;
+}
+
+export interface PipelineExecutionSummary {
+  originalRows: number;
+  finalRows: number;
+  rowsModified: number;
+  rowsRemoved: number;
+  originalCols: number;
+  finalCols: number;
+  columnsAdded: number;
+  columnsRemoved: number;
+  dataQualityBefore: number;
+  dataQualityAfter: number;
+  totalTransformations: number;
+  enabledSteps: number;
+  disabledSteps: number;
+  status: 'success' | 'warning' | 'failed' | 'idle';
+  stepMetrics: StepExecutionMetric[];
+  executionTimeMs: number;
+  failedStepId?: string;
+  failedStepReason?: string;
+}
+
+export interface PipelineVersionSnapshot {
+  version: number;
+  name: string;
+  description?: string;
+  steps: TransformStep[];
+  updatedAt: string;
+}
+
+export interface SavedPipeline {
+  id: string;
+  name: string;
+  description?: string;
+  sourceDatasetId?: string;
+  sourceDatasetName?: string;
+  version: number;
+  versions?: PipelineVersionSnapshot[];
+  steps: TransformStep[];
+  requiredColumns: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DatasetCompatibilityResult {
+  isCompatible: boolean;
+  status: 'fully_compatible' | 'partially_compatible' | 'incompatible';
+  missingColumns: string[];
+  matchedColumns: string[];
+  typeMismatches: { column: string; expected: string; actual: string }[];
+  possibleMatches: { missing: string; candidate: string }[];
+  warnings: string[];
+}
+
+export interface StepValidationResult {
+  stepId: string;
+  status: 'valid' | 'warning' | 'invalid';
+  message: string;
+  affectedColumns?: string[];
+}
+
+export interface PipelineValidationResult {
+  isValid: boolean;
+  stepValidations: StepValidationResult[];
+  errors: string[];
+  warnings: string[];
 }
 
 export type CleaningTabId =
   | 'overview'
+  | 'ai-assistant'
   | 'columns'
   | 'calculated'
   | 'conditional'
@@ -338,6 +432,8 @@ export interface CleaningPreviewResult {
   qualityBefore?: DataProfile;
   qualityAfter?: DataProfile;
   executionTimeMs: number;
+  summary?: PipelineExecutionSummary;
+  stepMetrics?: StepExecutionMetric[];
   invalidConversions?: { rowIndex: number; column: string; rawValue: unknown; reason: string }[];
 }
 
@@ -346,4 +442,13 @@ export interface CleanedDatasetSaveResult {
   newDataset: ImportedDataset;
   stepsApplied: number;
   message: string;
+  lineage?: {
+    sourceDatasetId: string;
+    sourceDatasetName: string;
+    pipelineId?: string;
+    pipelineName?: string;
+    pipelineVersion?: number;
+    stepsCount: number;
+    createdAt: string;
+  };
 }

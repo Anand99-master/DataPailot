@@ -1,7 +1,50 @@
 import { TransformStep, CleaningPreviewResult, CleanedDatasetSaveResult } from '../types/cleaning';
+import { AiCleaningPlan, AiReanalysisResult } from '../types/aiCleaning';
 import { ExportFormat } from '../types/import';
 
 export class CleaningApiClient {
+  /**
+   * Runs AI and Data Quality analysis to generate smart cleaning recommendations
+   */
+  public static async analyzeDatasetWithAi(
+    datasetId: string,
+    steps: TransformStep[] = []
+  ): Promise<AiCleaningPlan> {
+    const res = await fetch('/api/cleaning/ai/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ datasetId, steps })
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || data.message || 'Failed to analyze dataset for AI recommendations.');
+    }
+
+    return data.plan;
+  }
+
+  /**
+   * Re-analyzes dataset comparing before and after pipeline execution
+   */
+  public static async reanalyzeDatasetWithAi(
+    datasetId: string,
+    steps: TransformStep[] = []
+  ): Promise<AiReanalysisResult> {
+    const res = await fetch('/api/cleaning/ai/reanalyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ datasetId, steps })
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || data.message || 'Failed to re-analyze dataset.');
+    }
+
+    return data.result;
+  }
+
   /**
    * Generates a preview of the dataset after applying the transformation steps
    */
@@ -29,12 +72,13 @@ export class CleaningApiClient {
   public static async saveCleanedDataset(
     datasetId: string,
     newDatasetName: string,
-    steps: TransformStep[]
+    steps: TransformStep[],
+    pipelineMetadata?: { pipelineId?: string; pipelineName?: string; pipelineVersion?: number }
   ): Promise<CleanedDatasetSaveResult> {
     const res = await fetch('/api/cleaning/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ datasetId, newDatasetName, steps })
+      body: JSON.stringify({ datasetId, newDatasetName, steps, pipelineMetadata })
     });
 
     const data = await res.json();

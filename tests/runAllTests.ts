@@ -17,6 +17,7 @@ import { runExcelExportTests } from './testExcelExport';
 import { runDataQualityTests } from './testDataQuality';
 import { runDataQualitySelectionTests } from './testDataQualitySelection';
 import { runDataTransformation15_2Tests } from './testDataTransformation15_2';
+import { runAiDataCleaning15_5Tests } from './testAiDataCleaning15_5';
 
 console.log('\n============================================================');
 console.log('DATAPILOT PHASE 8: AUTOMATED TEST SUITE & REGRESSION MATRIX');
@@ -46,7 +47,8 @@ const suites: TestGroup[] = [
   { name: '15. EXCEL (XLSX) QUERY RESULT EXPORT', runner: runExcelExportTests },
   { name: '16. DATA QUALITY & PROFILING 2.0', runner: runDataQualityTests },
   { name: '17. DATA QUALITY WORKSPACE SELECTION', runner: runDataQualitySelectionTests },
-  { name: '18. ADVANCED DATA TRANSFORMATION WORKSPACE (15.2)', runner: runDataTransformation15_2Tests }
+  { name: '18. ADVANCED DATA TRANSFORMATION WORKSPACE (15.2)', runner: runDataTransformation15_2Tests },
+  { name: '19. AI-ASSISTED DATA CLEANING & AUTO-CLEAN RECOMMENDATIONS (15.5)', runner: runAiDataCleaning15_5Tests }
 ];
 
 async function runAll() {

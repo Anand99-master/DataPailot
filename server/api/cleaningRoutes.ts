@@ -3,9 +3,70 @@ import { getSessionId } from './connectionRoutes';
 import { ApiResponse } from '../utils/apiResponse';
 import { Logger } from '../utils/logger';
 import { DataCleaningService } from '../services/DataCleaningService';
+import { AiCleaningService } from '../ai/AiCleaningService';
 import { ExportFormat } from '../../src/types/import';
 
 export const cleaningRoutes = Router();
+
+/**
+ * POST /api/cleaning/ai/analyze
+ * Generates grounded AI recommendations for cleaning and transforming a dataset
+ */
+cleaningRoutes.post('/ai/analyze', async (req: Request, res: Response) => {
+  try {
+    const sessionId = getSessionId(req, res);
+    const { datasetId, steps } = req.body;
+
+    if (!datasetId) {
+      ApiResponse.error(res, 400, 'MISSING_DATASET_ID', 'datasetId is required.');
+      return;
+    }
+
+    const plan = await AiCleaningService.analyzeDataset(
+      sessionId,
+      datasetId,
+      Array.isArray(steps) ? steps : []
+    );
+
+    res.json({
+      success: true,
+      plan
+    });
+  } catch (err: any) {
+    Logger.error('AI cleaning analysis failed', err);
+    ApiResponse.error(res, 500, 'AI_ANALYSIS_FAILED', err.message || 'Failed to analyze dataset for AI recommendations.');
+  }
+});
+
+/**
+ * POST /api/cleaning/ai/reanalyze
+ * Re-analyzes dataset after pipeline modifications, returning remaining issues and estimated improvements
+ */
+cleaningRoutes.post('/ai/reanalyze', async (req: Request, res: Response) => {
+  try {
+    const sessionId = getSessionId(req, res);
+    const { datasetId, steps } = req.body;
+
+    if (!datasetId) {
+      ApiResponse.error(res, 400, 'MISSING_DATASET_ID', 'datasetId is required.');
+      return;
+    }
+
+    const result = await AiCleaningService.reanalyzeDataset(
+      sessionId,
+      datasetId,
+      Array.isArray(steps) ? steps : []
+    );
+
+    res.json({
+      success: true,
+      result
+    });
+  } catch (err: any) {
+    Logger.error('AI cleaning re-analysis failed', err);
+    ApiResponse.error(res, 500, 'AI_REANALYSIS_FAILED', err.message || 'Failed to re-analyze dataset.');
+  }
+});
 
 /**
  * POST /api/cleaning/preview
@@ -44,7 +105,7 @@ cleaningRoutes.post('/preview', async (req: Request, res: Response) => {
 cleaningRoutes.post('/save', async (req: Request, res: Response) => {
   try {
     const sessionId = getSessionId(req, res);
-    const { datasetId, newDatasetName, steps } = req.body;
+    const { datasetId, newDatasetName, steps, pipelineMetadata } = req.body;
 
     if (!datasetId) {
       ApiResponse.error(res, 400, 'MISSING_DATASET_ID', 'datasetId is required.');
@@ -55,7 +116,8 @@ cleaningRoutes.post('/save', async (req: Request, res: Response) => {
       sessionId,
       datasetId,
       newDatasetName,
-      Array.isArray(steps) ? steps : []
+      Array.isArray(steps) ? steps : [],
+      pipelineMetadata
     );
 
     res.json({
