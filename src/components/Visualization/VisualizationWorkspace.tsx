@@ -245,14 +245,10 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
         setQueryError(res.errorMessage || 'Failed to execute query');
       } else {
         setInternalQueryResult(res);
+        setRawSelectedMeasure(meas);
 
-        // Determine returned measure column name
-        const resultCols = res.columns.map(c => c.name);
-        const autoY = resultCols.find(c => c !== dim) || resultCols[1] || resultCols[0] || '';
-        
         setConfig(prev => ({
           ...prev,
-          yAxis: autoY,
           title: prev.title || `${targetDataset.name} by ${dim || 'Category'}`
         }));
       }
@@ -341,20 +337,26 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
   };
 
   // 4. Validate current configuration
+  const activeSchemaColumns = useMemo(() => {
+    if (dataSourceMode === 'imported' && datasetColumns.length > 0) {
+      return datasetColumns;
+    }
+    return detectedColumns.length > 0 ? detectedColumns : datasetColumns;
+  }, [dataSourceMode, datasetColumns, detectedColumns]);
+
   const validation = useMemo(() => {
-    const columnsToValidate = detectedColumns.length > 0 ? detectedColumns : datasetColumns;
-    return ChartRecommender.validateConfig(config, columnsToValidate);
-  }, [config, detectedColumns, datasetColumns]);
+    return ChartRecommender.validateConfig(config, activeSchemaColumns);
+  }, [config, activeSchemaColumns]);
 
   // 5. Process chart data with safe NULL handling and sorting
   const processedData = useMemo(() => {
     if (!effectiveQueryResult || !effectiveQueryResult.rows) return [];
-    return VisualizationDataProcessor.process(effectiveQueryResult.rows, config, detectedColumns);
-  }, [effectiveQueryResult, config, detectedColumns]);
+    return VisualizationDataProcessor.process(effectiveQueryResult.rows, config, activeSchemaColumns);
+  }, [effectiveQueryResult, config, activeSchemaColumns]);
 
   // Ask AI for Chart Recommendation
   const handleAskAiForChart = async () => {
-    const cols = detectedColumns.length > 0 ? detectedColumns : datasetColumns;
+    const cols = activeSchemaColumns;
     if (cols.length === 0) return;
     setIsAiRecommending(true);
     try {
@@ -877,7 +879,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
           <ChartConfigPanel
             config={config}
             onChangeConfig={handleChangeConfig}
-            columns={datasetColumns.length > 0 ? datasetColumns : detectedColumns}
+            columns={activeSchemaColumns}
             validation={validation}
             onAskAiForChart={handleAskAiForChart}
             isAiLoading={isAiRecommending}

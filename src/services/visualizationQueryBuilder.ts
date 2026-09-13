@@ -39,8 +39,9 @@ export class VisualizationQueryBuilder {
   /**
    * Generates a clean column alias from aggregation and measure name
    */
-  public static generateMeasureAlias(measure: string, aggregation: string): string {
-    const cleanMeasure = measure.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+  public static generateMeasureAlias(measure: string, aggregation: string, tableName?: string): string {
+    const isAllRows = !measure || measure === '*' || measure === 'All Rows';
+    const cleanMeasure = isAllRows ? '' : measure.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
     const aggUpper = aggregation.toUpperCase();
 
     if (aggUpper === 'COUNT') {
@@ -50,44 +51,48 @@ export class VisualizationQueryBuilder {
       if (cleanMeasure.includes('customer') || cleanMeasure === 'customer_id') {
         return 'total_customers';
       }
-      return cleanMeasure ? `total_${cleanMeasure}` : 'total_count';
+      if (isAllRows) {
+        return 'total_orders';
+      }
+      return cleanMeasure ? `total_${cleanMeasure}` : 'total_orders';
     }
 
     if (aggUpper === 'SUM') {
-      return `total_${cleanMeasure}`;
+      return `total_${cleanMeasure || 'sum'}`;
     }
 
     if (aggUpper === 'AVG') {
-      return `avg_${cleanMeasure}`;
+      return `avg_${cleanMeasure || 'avg'}`;
     }
 
     if (aggUpper === 'MIN') {
-      return `min_${cleanMeasure}`;
+      return `min_${cleanMeasure || 'min'}`;
     }
 
     if (aggUpper === 'MAX') {
-      return `max_${cleanMeasure}`;
+      return `max_${cleanMeasure || 'max'}`;
     }
 
     return cleanMeasure || 'value';
   }
 
   /**
-   * Builds the SQL aggregation expression, e.g. COUNT(*), SUM("Sales"), etc.
+   * Builds the SQL aggregation expression, e.g. COUNT(*), COUNT("Order_ID"), SUM("Sales"), etc.
    */
   public static buildAggregationExpression(
     measure: string | undefined,
     aggregation: string = 'none',
-    dialect: string = 'sqlite'
+    dialect: string = 'sqlite',
+    tableName?: string
   ): { expression: string; alias: string } {
     const aggUpper = (aggregation || 'none').toUpperCase();
-    const safeMeasure = measure ? this.quoteIdentifier(measure, dialect) : '';
-    const alias = this.generateMeasureAlias(measure || '', aggUpper);
+    const isAllRows = !measure || measure === '*' || measure === 'All Rows';
+    const safeMeasure = !isAllRows && measure ? this.quoteIdentifier(measure, dialect) : '';
+    const alias = this.generateMeasureAlias(measure || '', aggUpper, tableName);
 
     switch (aggUpper) {
       case 'COUNT': {
-        // If measure is specified and not *, count that measure or COUNT(*)
-        if (!measure || measure === '*') {
+        if (isAllRows) {
           return { expression: 'COUNT(*)', alias };
         }
         return { expression: `COUNT(${safeMeasure})`, alias };
@@ -99,9 +104,15 @@ export class VisualizationQueryBuilder {
         };
       }
       case 'AVG': {
-        if (dialect === 'sqlite') {
+        if (dialect === 'sqlite' || dialect === 'mysql' || dialect === 'oracle') {
           return {
             expression: `ROUND(AVG(${safeMeasure}), 2)`,
+            alias
+          };
+        }
+        if (dialect === 'mssql') {
+          return {
+            expression: `ROUND(AVG(CAST(${safeMeasure} AS FLOAT)), 2)`,
             alias
           };
         }
@@ -154,7 +165,8 @@ export class VisualizationQueryBuilder {
       const { expression, alias } = this.buildAggregationExpression(
         measure,
         aggUpper === 'NONE' ? 'COUNT' : aggUpper,
-        dialect
+        dialect,
+        tableName
       );
       return `SELECT ${expression} AS ${this.quoteIdentifier(alias, dialect)} FROM ${safeTable};`;
     }
@@ -192,7 +204,7 @@ export class VisualizationQueryBuilder {
     if (dimension) {
       const safeDim = this.quoteIdentifier(dimension, dialect);
       const effectiveAgg = aggUpper === 'NONE' ? 'COUNT' : aggUpper;
-      const { expression, alias } = this.buildAggregationExpression(measure, effectiveAgg, dialect);
+      const { expression, alias } = this.buildAggregationExpression(measure, effectiveAgg, dialect, tableName);
       const safeAlias = this.quoteIdentifier(alias, dialect);
 
       let orderClause = '';
@@ -203,12 +215,26 @@ export class VisualizationQueryBuilder {
       }
 
       let limitClause = '';
+      let parsedLimit: number | null = null;
       if (typeof limit === 'number') {
-        limitClause = `LIMIT ${limit}`;
+        parsedLimit = limit;
       } else if (limit !== 'all') {
         const parsed = parseInt(String(limit), 10);
         if (!isNaN(parsed) && parsed > 0) {
-          limitClause = `LIMIT ${parsed}`;
+          parsedLimit = parsed;
+        }
+      }
+
+      if (parsedLimit !== null) {
+        if (dialect === 'mssql') {
+          if (!orderClause) {
+            orderClause = `ORDER BY ${safeAlias} DESC`;
+          }
+          limitClause = `OFFSET 0 ROWS FETCH NEXT ${parsedLimit} ROWS ONLY`;
+        } else if (dialect === 'oracle') {
+          limitClause = `FETCH FIRST ${parsedLimit} ROWS ONLY`;
+        } else {
+          limitClause = `LIMIT ${parsedLimit}`;
         }
       }
 

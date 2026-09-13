@@ -216,5 +216,352 @@ export async function runVisualizationImportIntegrationTests() {
   await unifiedDataLayer.removeDataset(testSessionId, dataset.datasetId);
   expectTrue('8.5 Test dataset cleanly removed', true);
 
+  // =========================================================================
+  // 9. AUTOMATED TEST SUITE: VISUALIZATION BUILDER AGGREGATION & TYPE RULES
+  // =========================================================================
+  const test18Columns: DetectedColumn[] = [
+    { name: 'Order_ID', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 50000, nullCount: 0, sampleValues: ['CA-2023-1001'] },
+    { name: 'Order_Date', dataType: 'date', semanticType: 'date', isNumeric: false, isDateOrTime: true, isCategorical: false, isBoolean: false, isNullable: false, distinctCount: 1200, nullCount: 0, sampleValues: ['2023-01-15'] },
+    { name: 'Ship_Date', dataType: 'date', semanticType: 'date', isNumeric: false, isDateOrTime: true, isCategorical: false, isBoolean: false, isNullable: false, distinctCount: 1200, nullCount: 0, sampleValues: ['2023-01-18'] },
+    { name: 'Ship_Mode', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 4, nullCount: 0, sampleValues: ['Standard Class'] },
+    { name: 'Customer_ID', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 800, nullCount: 0, sampleValues: ['CG-12520'] },
+    { name: 'Customer_Name', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 800, nullCount: 0, sampleValues: ['Claire Gute'] },
+    { name: 'Segment', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 3, nullCount: 0, sampleValues: ['Consumer'] },
+    { name: 'Country', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 1, nullCount: 0, sampleValues: ['United States'] },
+    { name: 'City', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 500, nullCount: 0, sampleValues: ['Henderson'] },
+    { name: 'State', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 49, nullCount: 0, sampleValues: ['Kentucky'] },
+    { name: 'Postal_Code', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 600, nullCount: 0, sampleValues: ['42420'] },
+    { name: 'Region', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 5, nullCount: 0, sampleValues: ['West', 'East', 'Central', 'South', 'North'] },
+    { name: 'Product_ID', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 1800, nullCount: 0, sampleValues: ['FUR-BO-10001798'] },
+    { name: 'Category', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 3, nullCount: 0, sampleValues: ['Furniture'] },
+    { name: 'Sub_Category', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 17, nullCount: 0, sampleValues: ['Bookcases'] },
+    { name: 'Product_Name', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 1800, nullCount: 0, sampleValues: ['Bush Somerset Collection Bookcase'] },
+    { name: 'Sales', dataType: 'numeric', semanticType: 'numeric', isNumeric: true, isDateOrTime: false, isCategorical: false, isBoolean: false, isNullable: false, distinctCount: 5000, nullCount: 0, sampleValues: [261.96] },
+    { name: 'Quantity', dataType: 'integer', semanticType: 'integer', isNumeric: true, isDateOrTime: false, isCategorical: false, isBoolean: false, isNullable: false, distinctCount: 14, nullCount: 0, sampleValues: [2] }
+  ];
+
+  // A. COUNT text column: Region + Order_ID + COUNT
+  const testA_Validation = ChartRecommender.validateConfig({
+    chartType: 'bar',
+    xAxis: 'Region',
+    yAxis: 'Order_ID',
+    aggregation: 'count',
+    sortOrder: 'desc',
+    sortBy: 'y',
+    limit: 50,
+    title: 'Orders by Region',
+    secondaryMeasures: [],
+    showLegend: true,
+    showDataLabels: false,
+    showGrid: true,
+    binCount: 20,
+    treatNullAsZero: false
+  }, test18Columns);
+  expectTrue('9.A.1 Validation allows COUNT on text column Order_ID', testA_Validation.isValid);
+  expect('9.A.2 Validation errors count is 0 for Order_ID COUNT', testA_Validation.errors.length, 0);
+
+  const testA_Sql = VisualizationQueryBuilder.buildQuery({
+    tableName: 'ecommerce_analysis_dataset_50000_1_',
+    dimension: 'Region',
+    measure: 'Order_ID',
+    aggregation: 'count',
+    chartType: 'bar',
+    sortOrder: 'desc',
+    limit: 50,
+    dialect: 'sqlite'
+  });
+  expectTrue('9.A.3 Query generates COUNT("Order_ID")', testA_Sql.includes('COUNT("Order_ID") AS "total_orders"'));
+  expectTrue('9.A.4 Query includes GROUP BY "Region"', testA_Sql.includes('GROUP BY "Region"'));
+  expectTrue('9.A.5 Query includes ORDER BY "total_orders" DESC', testA_Sql.includes('ORDER BY "total_orders" DESC'));
+
+  // B. COUNT numeric column: Region + Quantity + COUNT
+  const testB_Validation = ChartRecommender.validateConfig({
+    chartType: 'bar',
+    xAxis: 'Region',
+    yAxis: 'Quantity',
+    aggregation: 'count',
+    sortOrder: 'desc',
+    sortBy: 'y',
+    limit: 50,
+    title: 'Quantity Count by Region',
+    secondaryMeasures: [],
+    showLegend: true,
+    showDataLabels: false,
+    showGrid: true,
+    binCount: 20,
+    treatNullAsZero: false
+  }, test18Columns);
+  expectTrue('9.B.1 Validation allows COUNT on numeric column Quantity', testB_Validation.isValid);
+  const testB_Sql = VisualizationQueryBuilder.buildQuery({
+    tableName: 'ecommerce_analysis_dataset_50000_1_',
+    dimension: 'Region',
+    measure: 'Quantity',
+    aggregation: 'count',
+    chartType: 'bar',
+    sortOrder: 'desc',
+    limit: 50,
+    dialect: 'sqlite'
+  });
+  expectTrue('9.B.2 Query generates COUNT("Quantity")', testB_Sql.includes('COUNT("Quantity")'));
+
+  // C. COUNT date column: Region + Order_Date + COUNT
+  const testC_Validation = ChartRecommender.validateConfig({
+    chartType: 'bar',
+    xAxis: 'Region',
+    yAxis: 'Order_Date',
+    aggregation: 'count',
+    sortOrder: 'desc',
+    sortBy: 'y',
+    limit: 50,
+    title: 'Order Date Count by Region',
+    secondaryMeasures: [],
+    showLegend: true,
+    showDataLabels: false,
+    showGrid: true,
+    binCount: 20,
+    treatNullAsZero: false
+  }, test18Columns);
+  expectTrue('9.C.1 Validation allows COUNT on date column Order_Date', testC_Validation.isValid);
+  const testC_Sql = VisualizationQueryBuilder.buildQuery({
+    tableName: 'ecommerce_analysis_dataset_50000_1_',
+    dimension: 'Region',
+    measure: 'Order_Date',
+    aggregation: 'count',
+    chartType: 'bar',
+    sortOrder: 'desc',
+    limit: 50,
+    dialect: 'sqlite'
+  });
+  expectTrue('9.C.2 Query generates COUNT("Order_Date")', testC_Sql.includes('COUNT("Order_Date")'));
+
+  // D. COUNT All Rows: Region + All Rows + COUNT
+  const testD_Validation = ChartRecommender.validateConfig({
+    chartType: 'bar',
+    xAxis: 'Region',
+    yAxis: 'All Rows',
+    aggregation: 'count',
+    sortOrder: 'desc',
+    sortBy: 'y',
+    limit: 50,
+    title: 'All Rows Count by Region',
+    secondaryMeasures: [],
+    showLegend: true,
+    showDataLabels: false,
+    showGrid: true,
+    binCount: 20,
+    treatNullAsZero: false
+  }, test18Columns);
+  expectTrue('9.D.1 Validation allows COUNT on All Rows', testD_Validation.isValid);
+  const testD_Sql = VisualizationQueryBuilder.buildQuery({
+    tableName: 'ecommerce_analysis_dataset_50000_1_',
+    dimension: 'Region',
+    measure: 'All Rows',
+    aggregation: 'count',
+    chartType: 'bar',
+    sortOrder: 'desc',
+    limit: 50,
+    dialect: 'sqlite'
+  });
+  expectTrue('9.D.2 Query generates COUNT(*)', testD_Sql.includes('COUNT(*) AS "total_orders"'));
+  expectTrue('9.D.3 Query includes GROUP BY "Region"', testD_Sql.includes('GROUP BY "Region"'));
+  expectTrue('9.D.4 Query includes ORDER BY "total_orders" DESC', testD_Sql.includes('ORDER BY "total_orders" DESC'));
+
+  // E. SUM numeric column: Region + Quantity + SUM
+  const testE_Validation = ChartRecommender.validateConfig({
+    chartType: 'bar',
+    xAxis: 'Region',
+    yAxis: 'Quantity',
+    aggregation: 'sum',
+    sortOrder: 'desc',
+    sortBy: 'y',
+    limit: 50,
+    title: 'Quantity Sum by Region',
+    secondaryMeasures: [],
+    showLegend: true,
+    showDataLabels: false,
+    showGrid: true,
+    binCount: 20,
+    treatNullAsZero: false
+  }, test18Columns);
+  expectTrue('9.E.1 Validation allows SUM on numeric column Quantity', testE_Validation.isValid);
+  const testE_Sql = VisualizationQueryBuilder.buildQuery({
+    tableName: 'ecommerce_analysis_dataset_50000_1_',
+    dimension: 'Region',
+    measure: 'Quantity',
+    aggregation: 'sum',
+    chartType: 'bar',
+    sortOrder: 'desc',
+    limit: 50,
+    dialect: 'sqlite'
+  });
+  expectTrue('9.E.2 Query generates SUM("Quantity")', testE_Sql.includes('SUM("Quantity")'));
+
+  // F. SUM text column: Must be rejected
+  const testF_Validation = ChartRecommender.validateConfig({
+    chartType: 'bar',
+    xAxis: 'Region',
+    yAxis: 'Order_ID',
+    aggregation: 'sum',
+    sortOrder: 'desc',
+    sortBy: 'y',
+    limit: 50,
+    title: 'Invalid SUM on Text',
+    secondaryMeasures: [],
+    showLegend: true,
+    showDataLabels: false,
+    showGrid: true,
+    binCount: 20,
+    treatNullAsZero: false
+  }, test18Columns);
+  expectTrue('9.F.1 Validation rejects SUM on text column Order_ID', !testF_Validation.isValid);
+  expectTrue('9.F.2 Rejection error states column must be numeric for SUM', testF_Validation.errors[0]?.includes('must be numeric for SUM'));
+
+  // G. AVG numeric column: Must work
+  const testG_Validation = ChartRecommender.validateConfig({
+    chartType: 'bar',
+    xAxis: 'Region',
+    yAxis: 'Sales',
+    aggregation: 'avg',
+    sortOrder: 'desc',
+    sortBy: 'y',
+    limit: 50,
+    title: 'Avg Sales by Region',
+    secondaryMeasures: [],
+    showLegend: true,
+    showDataLabels: false,
+    showGrid: true,
+    binCount: 20,
+    treatNullAsZero: false
+  }, test18Columns);
+  expectTrue('9.G.1 Validation allows AVG on numeric column Sales', testG_Validation.isValid);
+  const testG_Sql = VisualizationQueryBuilder.buildQuery({
+    tableName: 'ecommerce_analysis_dataset_50000_1_',
+    dimension: 'Region',
+    measure: 'Sales',
+    aggregation: 'avg',
+    chartType: 'bar',
+    sortOrder: 'desc',
+    limit: 50,
+    dialect: 'sqlite'
+  });
+  expectTrue('9.G.2 Query generates AVG("Sales")', testG_Sql.includes('AVG("Sales")'));
+
+  // H. AVG text column: Must be rejected
+  const testH_Validation = ChartRecommender.validateConfig({
+    chartType: 'bar',
+    xAxis: 'Region',
+    yAxis: 'Order_ID',
+    aggregation: 'avg',
+    sortOrder: 'desc',
+    sortBy: 'y',
+    limit: 50,
+    title: 'Invalid AVG on Text',
+    secondaryMeasures: [],
+    showLegend: true,
+    showDataLabels: false,
+    showGrid: true,
+    binCount: 20,
+    treatNullAsZero: false
+  }, test18Columns);
+  expectTrue('9.H.1 Validation rejects AVG on text column Order_ID', !testH_Validation.isValid);
+  expectTrue('9.H.2 Rejection error states column must be numeric for AVG', testH_Validation.errors[0]?.includes('must be numeric for AVG'));
+
+  // I. Imported XLSX dataset: 50,000 rows / 18 columns execution against UnifiedDataLayer
+  const testSession50k = `vis_50k_session_${Date.now()}`;
+  const regions = ['West', 'East', 'Central', 'South', 'North'];
+  const generated50kRows: Record<string, any>[] = [];
+  for (let i = 0; i < 50000; i++) {
+    const rIdx = i % 5;
+    generated50kRows.push({
+      Order_ID: `ORD-${100000 + i}`,
+      Order_Date: '2023-05-10',
+      Ship_Date: '2023-05-14',
+      Ship_Mode: 'Standard Class',
+      Customer_ID: `CUST-${i % 800}`,
+      Customer_Name: `Customer ${i % 800}`,
+      Segment: 'Consumer',
+      Country: 'United States',
+      City: 'Seattle',
+      State: 'Washington',
+      Postal_Code: '98101',
+      Region: regions[rIdx],
+      Product_ID: `PROD-${i % 1800}`,
+      Category: 'Technology',
+      Sub_Category: 'Accessories',
+      Product_Name: `Product Name ${i % 1800}`,
+      Sales: 150.0 + (i % 50),
+      Quantity: (i % 5) + 1
+    });
+  }
+
+  const ds50k = await unifiedDataLayer.registerDataset(testSession50k, {
+    sourceName: 'ecommerce_analysis_dataset_50000_1_.xlsx',
+    fileType: 'XLSX',
+    columns: test18Columns.map(c => ({
+      name: c.name,
+      dataType: c.dataType as any,
+      isNullable: false,
+      nullCount: 0,
+      sampleValues: c.sampleValues
+    })),
+    rows: generated50kRows
+  });
+
+  expect('9.I.1 50,000 row dataset registered with 18 columns', ds50k.columns.length, 18);
+  expect('9.I.2 50,000 row dataset registered with 50,000 row count', ds50k.rowCount, 50000);
+
+  // Execute Region + Order_ID + COUNT
+  const analytical50kSql = VisualizationQueryBuilder.buildQuery({
+    tableName: ds50k.tableName,
+    dimension: 'Region',
+    measure: 'Order_ID',
+    aggregation: 'count',
+    chartType: 'bar',
+    sortOrder: 'desc',
+    limit: 50,
+    dialect: 'sqlite'
+  });
+
+  const exec50kResult = await unifiedDataLayer.executeQuery(testSession50k, analytical50kSql);
+  expectTrue('9.I.3 50,000 row analytical query executed successfully', exec50kResult.rowCount === 5);
+  expect('9.I.4 5 distinct region groups returned', exec50kResult.rowCount, 5);
+
+  const total50kOrders = (exec50kResult.rows as any[]).reduce((sum, r) => sum + (r.total_orders || 0), 0);
+  expect('9.I.5 Total count across all regions equals exactly 50,000', total50kOrders, 50000);
+
+  // Verify each region has 10,000
+  for (const r of exec50kResult.rows as any[]) {
+    expect(`9.I.6 Region ${r.Region} has exactly 10,000 orders`, r.total_orders, 10000);
+  }
+
+  // Also test DataProcessor mapping with Order_ID and All Rows
+  const processed50kPoints = VisualizationDataProcessor.process(
+    exec50kResult.rows as any[],
+    {
+      chartType: 'bar',
+      xAxis: 'Region',
+      yAxis: 'Order_ID',
+      aggregation: 'count',
+      sortOrder: 'desc',
+      sortBy: 'y',
+      limit: 50,
+      title: 'Orders by Region',
+      secondaryMeasures: [],
+      showLegend: true,
+      showDataLabels: false,
+      showGrid: true,
+      binCount: 20,
+      treatNullAsZero: false
+    },
+    test18Columns
+  );
+  expect('9.I.7 Processed data points count is 5', processed50kPoints.length, 5);
+  expect('9.I.8 First point has Order_ID measure value 10,000', processed50kPoints[0].Order_ID, 10000);
+  expect('9.I.9 First point rawValue is 10,000', processed50kPoints[0].rawValue, 10000);
+
+  // Clean up 50k dataset
+  await unifiedDataLayer.removeDataset(testSession50k, ds50k.datasetId);
+  expectTrue('9.I.10 50,000 row dataset cleanly removed from memory', true);
+
   return results;
 }

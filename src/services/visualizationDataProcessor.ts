@@ -1,4 +1,5 @@
 import { ChartConfig, DetectedColumn } from '../types/visualization';
+import { VisualizationQueryBuilder } from './visualizationQueryBuilder';
 
 export interface ProcessedDataPoint {
   [key: string]: unknown;
@@ -40,10 +41,32 @@ export class VisualizationDataProcessor {
     const secondaryKeys = config.secondaryMeasures || [];
     const seriesGroupKey = config.seriesGroup;
 
+    // Expected query alias when measure is aggregated (e.g. total_orders, total_sales)
+    const expectedAlias = VisualizationQueryBuilder.generateMeasureAlias(
+      yKey,
+      config.aggregation || 'none'
+    );
+
     // 1. Map raw rows into points with safe NULL handling
     let data: ProcessedDataPoint[] = rows.map((row, idx) => {
       const rawX = row[xKey];
-      const rawY = row[yKey];
+      
+      // Resolve raw Y value:
+      // 1. Exact match by yKey (e.g. Order_ID or raw column)
+      // 2. Alias match from query generator (e.g. total_orders, total_customers)
+      // 3. Fallback: first non-X column containing a numeric value
+      let rawY = row[yKey];
+      if (rawY === undefined && expectedAlias && row[expectedAlias] !== undefined) {
+        rawY = row[expectedAlias];
+      }
+      if (rawY === undefined) {
+        const candidateKey = Object.keys(row).find(
+          k => k !== xKey && k !== 'id' && (typeof row[k] === 'number' || (!isNaN(Number(row[k])) && row[k] !== ''))
+        );
+        if (candidateKey) {
+          rawY = row[candidateKey];
+        }
+      }
 
       // Format X label
       let xLabel = '';
@@ -74,6 +97,10 @@ export class VisualizationDataProcessor {
         [yKey]: yVal,
         rawValue: yVal
       };
+
+      if (expectedAlias && expectedAlias !== yKey) {
+        point[expectedAlias] = yVal;
+      }
 
       // Process secondary numeric measures
       for (const sKey of secondaryKeys) {
@@ -206,6 +233,8 @@ export class VisualizationDataProcessor {
     rows: Record<string, unknown>[],
     metricCol: string
   ): KpiMetricSummary {
+    const isAllRows = !metricCol || metricCol === '*' || metricCol === 'All Rows';
+    const metricLabel = isAllRows ? 'ALL ROWS' : metricCol.replace(/_/g, ' ').toUpperCase();
     const defaultRes: KpiMetricSummary = {
       currentValue: null,
       formattedCurrent: '—',
@@ -214,16 +243,19 @@ export class VisualizationDataProcessor {
       change: null,
       changePercent: null,
       hasComparison: false,
-      metricLabel: metricCol.replace(/_/g, ' ').toUpperCase()
+      metricLabel
     };
 
     if (!rows || rows.length === 0) return defaultRes;
 
     // Check if result has 1 row with current and previous columns
     const firstRow = rows[0];
+    const expectedAlias = VisualizationQueryBuilder.generateMeasureAlias(metricCol, 'count');
     const targetMetricCol = (metricCol && firstRow[metricCol] !== undefined)
       ? metricCol
-      : Object.keys(firstRow).find(k => typeof firstRow[k] === 'number') || Object.keys(firstRow)[0];
+      : (expectedAlias && firstRow[expectedAlias] !== undefined)
+      ? expectedAlias
+      : Object.keys(firstRow).find(k => typeof firstRow[k] === 'number' || (!isNaN(Number(firstRow[k])) && firstRow[k] !== '')) || Object.keys(firstRow)[0];
 
     if (!targetMetricCol) return defaultRes;
 

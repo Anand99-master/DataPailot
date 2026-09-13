@@ -28,7 +28,7 @@ export class UnifiedDataLayer {
 
   private constructor() {
     // Cleanup inactive stores after 1 hour of inactivity
-    setInterval(() => {
+    const cleanupTimer = setInterval(() => {
       const now = Date.now();
       for (const [sessionId, store] of this.sessionStores.entries()) {
         if (now - store.lastActive > 60 * 60 * 1000) {
@@ -39,6 +39,7 @@ export class UnifiedDataLayer {
         }
       }
     }, 10 * 60 * 1000);
+    cleanupTimer.unref?.();
   }
 
   public static getInstance(): UnifiedDataLayer {

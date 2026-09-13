@@ -177,12 +177,47 @@ export class ChartRecommender {
     const xCol = config.xAxis ? colMap.get(config.xAxis) : undefined;
     const yCol = config.yAxis ? colMap.get(config.yAxis) : undefined;
 
+    const isCount = config.aggregation === 'count';
+    const isAllRows = config.yAxis === 'All Rows' || config.yAxis === '*';
+    const isSum = config.aggregation === 'sum';
+    const isAvg = config.aggregation === 'avg';
+    const isMin = config.aggregation === 'min';
+    const isMax = config.aggregation === 'max';
+
     // KPI Card validation
     if (config.chartType === 'kpi') {
-      if (!yCol && config.aggregation !== 'count') {
-        errors.push('KPI Card requires a metric column.');
-      } else if (yCol && !yCol.isNumeric && config.aggregation !== 'count') {
-        errors.push(`KPI metric '${config.yAxis}' must be numeric (detected as ${yCol.semanticType}).`);
+      if (isCount) {
+        if (!config.yAxis) {
+          errors.push('KPI Card requires a metric column or "All Rows" to count.');
+        } else if (!isAllRows && !yCol) {
+          errors.push(`Metric column '${config.yAxis}' not found in dataset.`);
+        }
+      } else if (isSum || isAvg) {
+        if (isAllRows) {
+          errors.push(`${config.aggregation.toUpperCase()} aggregation requires a numeric column, not "All Rows".`);
+        } else if (!config.yAxis) {
+          errors.push(`KPI Card requires a numeric measure for ${config.aggregation.toUpperCase()} aggregation.`);
+        } else if (!yCol) {
+          errors.push(`Measure column '${config.yAxis}' not found in dataset.`);
+        } else if (!yCol.isNumeric) {
+          errors.push(`KPI metric '${config.yAxis}' must be numeric for ${config.aggregation.toUpperCase()} aggregation (detected as ${yCol.semanticType}).`);
+        }
+      } else if (isMin || isMax) {
+        if (isAllRows) {
+          errors.push(`${config.aggregation.toUpperCase()} aggregation requires a column, not "All Rows".`);
+        } else if (!config.yAxis) {
+          errors.push(`KPI Card requires a column for ${config.aggregation.toUpperCase()} aggregation.`);
+        } else if (!yCol) {
+          errors.push(`Measure column '${config.yAxis}' not found in dataset.`);
+        } else if (!yCol.isNumeric && !yCol.isDateOrTime) {
+          errors.push(`KPI metric '${config.yAxis}' must be numeric or date for ${config.aggregation.toUpperCase()} aggregation (detected as ${yCol.semanticType}).`);
+        }
+      } else {
+        if (!config.yAxis) {
+          errors.push('KPI Card requires a metric column.');
+        } else if (yCol && !yCol.isNumeric) {
+          errors.push(`KPI metric '${config.yAxis}' must be numeric (detected as ${yCol.semanticType}).`);
+        }
       }
       return { isValid: errors.length === 0, errors, warnings };
     }
@@ -220,10 +255,41 @@ export class ChartRecommender {
       errors.push('Please select a dimension or category for the X-axis.');
     }
 
-    if (!yCol && config.aggregation !== 'count') {
-      errors.push('Please select a numeric measure for the Y-axis.');
-    } else if (yCol && !yCol.isNumeric && config.aggregation !== 'count') {
-      errors.push(`Measure column '${config.yAxis}' must be numeric (detected as ${yCol.semanticType}).`);
+    if (isCount) {
+      // COUNT aggregation: allows any column type (text, date, numeric, boolean) or "All Rows"
+      if (!config.yAxis) {
+        errors.push('Please select a column or "All Rows" for the Y-axis to count.');
+      } else if (!isAllRows && !yCol) {
+        errors.push(`Measure column '${config.yAxis}' not found in dataset.`);
+      }
+    } else if (isSum || isAvg) {
+      // SUM and AVG strictly require numeric columns
+      if (isAllRows) {
+        errors.push(`${config.aggregation.toUpperCase()} aggregation cannot be performed on "All Rows". Please select a numeric column.`);
+      } else if (!config.yAxis) {
+        errors.push(`Please select a numeric measure for the Y-axis with ${config.aggregation.toUpperCase()} aggregation.`);
+      } else if (!yCol) {
+        errors.push(`Measure column '${config.yAxis}' not found in dataset.`);
+      } else if (!yCol.isNumeric) {
+        errors.push(`Measure column '${config.yAxis}' must be numeric for ${config.aggregation.toUpperCase()} aggregation (detected as ${yCol.semanticType}).`);
+      }
+    } else if (isMin || isMax) {
+      // MIN and MAX require numeric or date columns
+      if (isAllRows) {
+        errors.push(`${config.aggregation.toUpperCase()} aggregation cannot be performed on "All Rows". Please select a column.`);
+      } else if (!config.yAxis) {
+        errors.push(`Please select a column for the Y-axis with ${config.aggregation.toUpperCase()} aggregation.`);
+      } else if (!yCol) {
+        errors.push(`Measure column '${config.yAxis}' not found in dataset.`);
+      } else if (!yCol.isNumeric && !yCol.isDateOrTime) {
+        errors.push(`Measure column '${config.yAxis}' must be numeric or date for ${config.aggregation.toUpperCase()} aggregation (detected as ${yCol.semanticType}).`);
+      }
+    } else {
+      if (!config.yAxis) {
+        errors.push('Please select a numeric measure for the Y-axis.');
+      } else if (yCol && !yCol.isNumeric) {
+        errors.push(`Measure column '${config.yAxis}' must be numeric (detected as ${yCol.semanticType}).`);
+      }
     }
 
     // Pie / Donut specific checks

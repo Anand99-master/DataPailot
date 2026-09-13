@@ -9,7 +9,7 @@ export class DataProfiler {
     datasetName: string,
     columns: ColumnMetadata[],
     rows: Record<string, unknown>[],
-    maxRowsToProfile = 50000
+    maxRowsToProfile = 5000
   ): DataProfile {
     const totalRows = rows.length;
     const totalColumns = columns.length;

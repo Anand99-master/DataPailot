@@ -56,11 +56,51 @@ export const ChartConfigPanel: React.FC<ChartConfigPanelProps> = ({
   const numericColumns = columns.filter(c => c.isNumeric);
   const categoricalColumns = columns.filter(c => !c.isNumeric || c.isDateOrTime);
 
+  const isCount = config.aggregation === 'count';
+  const isSumOrAvg = config.aggregation === 'sum' || config.aggregation === 'avg';
+  const isMinOrMax = config.aggregation === 'min' || config.aggregation === 'max';
+
+  // Filter selectable measure columns based on active aggregation
+  const selectableMeasureColumns = React.useMemo(() => {
+    if (config.chartType === 'scatter') {
+      return columns.filter(c => c.isNumeric);
+    }
+    if (isCount) {
+      // COUNT is valid for ALL column types: text, date, numeric, boolean
+      return columns;
+    }
+    if (isSumOrAvg) {
+      // SUM and AVG strictly require numeric columns
+      return columns.filter(c => c.isNumeric);
+    }
+    if (isMinOrMax) {
+      // MIN and MAX support numeric and date columns
+      return columns.filter(c => c.isNumeric || c.isDateOrTime);
+    }
+    return columns;
+  }, [columns, config.chartType, isCount, isSumOrAvg, isMinOrMax]);
+
+  const handleAggregationChange = (newAgg: ChartAggregation) => {
+    let nextY = config.yAxis;
+    if (newAgg === 'sum' || newAgg === 'avg') {
+      const currentCol = columns.find(c => c.name === config.yAxis);
+      if (config.yAxis === 'All Rows' || !currentCol || !currentCol.isNumeric) {
+        nextY = numericColumns[0]?.name || '';
+      }
+    } else if (newAgg === 'min' || newAgg === 'max') {
+      const currentCol = columns.find(c => c.name === config.yAxis);
+      if (config.yAxis === 'All Rows' || !currentCol || (!currentCol.isNumeric && !currentCol.isDateOrTime)) {
+        nextY = columns.find(c => c.isNumeric || c.isDateOrTime)?.name || '';
+      }
+    }
+    onChangeConfig({ ...config, aggregation: newAgg, yAxis: nextY });
+  };
+
   const handleTypeSelect = (type: ChartType) => {
     const updated = { ...config, chartType: type };
     // If switching to KPI, set yAxis to first numeric if not set
     if (type === 'kpi' && (!config.yAxis || !numericColumns.some(c => c.name === config.yAxis))) {
-      updated.yAxis = numericColumns[0]?.name || '';
+      updated.yAxis = isCount ? (config.yAxis || 'All Rows') : (numericColumns[0]?.name || '');
     }
     // If switching to Histogram, set xAxis/yAxis to numeric
     if (type === 'histogram' && (!config.xAxis || !numericColumns.some(c => c.name === config.xAxis))) {
@@ -195,29 +235,54 @@ export const ChartConfigPanel: React.FC<ChartConfigPanelProps> = ({
                 </div>
               )}
 
-              {/* Y Axis (Primary Numeric Measure) */}
+              {/* Y Axis (Primary Measure / Count Target) */}
               {config.chartType !== 'histogram' && (
                 <div>
-                  <label className="block text-slate-400 mb-1 text-[11px]">
-                    {config.chartType === 'scatter'
-                      ? 'Y Axis (Numeric)'
-                      : config.chartType === 'kpi'
-                      ? 'KPI Metric (Numeric)'
-                      : 'Y Axis (Measure)'}
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-slate-400 text-[11px]">
+                      {config.chartType === 'scatter'
+                        ? 'Y Axis (Numeric)'
+                        : config.chartType === 'kpi'
+                        ? (isCount ? 'KPI Metric (Count Target / All Rows)' : 'KPI Metric (Numeric)')
+                        : isCount
+                        ? 'Y Axis (Measure / Count Target)'
+                        : 'Y Axis (Measure)'}
+                    </label>
+                    {isCount && (
+                      <span className="text-[10px] text-emerald-400 font-medium">
+                        Any column / All Rows
+                      </span>
+                    )}
+                  </div>
                   <select
                     id="select-chart-y-axis"
                     value={config.yAxis}
                     onChange={e => onChangeConfig({ ...config, yAxis: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-md px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500"
                   >
-                    <option value="">— Select Measure —</option>
-                    {columns.map(col => (
+                    <option value="">{isCount ? '— Select Column to Count —' : '— Select Measure —'}</option>
+                    {isCount && (
+                      <option value="All Rows">All Rows (*)</option>
+                    )}
+                    {selectableMeasureColumns.map(col => (
                       <option key={col.name} value={col.name}>
                         {col.name} ({col.semanticType})
                       </option>
                     ))}
                   </select>
+                  {isCount ? (
+                    <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                      COUNT supports any column type (text, date, numeric, boolean) or All Rows (*).
+                    </p>
+                  ) : isSumOrAvg ? (
+                    <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                      {config.aggregation.toUpperCase()} requires a numeric column.
+                    </p>
+                  ) : isMinOrMax ? (
+                    <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                      {config.aggregation.toUpperCase()} requires a numeric or date column.
+                    </p>
+                  ) : null}
                 </div>
               )}
 
@@ -231,7 +296,7 @@ export const ChartConfigPanel: React.FC<ChartConfigPanelProps> = ({
                         key={agg}
                         type="button"
                         id={`btn-agg-${agg}`}
-                        onClick={() => onChangeConfig({ ...config, aggregation: agg })}
+                        onClick={() => handleAggregationChange(agg)}
                         className={`py-1 rounded text-center text-[11px] font-mono border transition-all ${
                           config.aggregation === agg
                             ? 'bg-indigo-600 border-indigo-500 text-white font-semibold'
