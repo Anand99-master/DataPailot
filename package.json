@@ -1,7 +1,7 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "engines": {
     "node": ">=22.5.0"
@@ -21,6 +21,7 @@
     "test:lineage": "tsx tests/testDataLineage.ts",
     "test:analysis": "tsx tests/testDashboardAndFilters.ts",
     "test:all": "tsx tests/runAllTests.ts",
+    "test:release": "tsx tests/testReleaseCandidate.ts",
     "migrate:up": "tsx server/migrations/cli.ts up",
     "migrate:down": "tsx server/migrations/cli.ts down",
     "migrate:status": "tsx server/migrations/cli.ts status",
