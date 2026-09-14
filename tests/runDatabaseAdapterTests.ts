@@ -1,6 +1,6 @@
 import { DatabaseAdapterFactory } from '../server/database/DatabaseAdapterFactory';
 import { DatabaseConnectionParams } from '../server/database/DatabaseAdapter';
-import path from 'path';
+import { createSqliteTestFixture } from './sqliteTestFixture';
 
 export async function runDatabaseAdapterTests(): Promise<{ name: string; passed: boolean; error?: string }[]> {
   const results: { name: string; passed: boolean; error?: string }[] = [];
@@ -13,14 +13,16 @@ export async function runDatabaseAdapterTests(): Promise<{ name: string; passed:
     }
   }
 
+  const sqliteFixture = createSqliteTestFixture();
+  let sqliteAdapter: ReturnType<typeof DatabaseAdapterFactory.create> | null = null;
+
   try {
     const pgParams: DatabaseConnectionParams = { type: 'postgresql', host: 'localhost', database: 'test' };
     const pgAdapter = DatabaseAdapterFactory.create(pgParams);
     assert(pgAdapter.getDatabaseType() === 'PostgreSQL', 'Factory creates PostgreSQL adapter correctly');
     
-    const dbFile = path.resolve(process.cwd(), 'data/datapilot_demo.sqlite');
-    const sqliteParams: DatabaseConnectionParams = { type: 'sqlite', filePath: dbFile };
-    const sqliteAdapter = DatabaseAdapterFactory.create(sqliteParams);
+    const sqliteParams: DatabaseConnectionParams = { type: 'sqlite', filePath: sqliteFixture.filePath };
+    sqliteAdapter = DatabaseAdapterFactory.create(sqliteParams);
     assert(sqliteAdapter.getDatabaseType() === 'SQLite', 'Factory creates SQLite adapter correctly');
     
     // SQLite Tests
@@ -138,6 +140,11 @@ export async function runDatabaseAdapterTests(): Promise<{ name: string; passed:
     
   } catch (e: any) {
     results.push({ name: 'Adapter foundation tests', passed: false, error: e.message });
+  } finally {
+    if (sqliteAdapter?.isConnected()) {
+      await sqliteAdapter.disconnect();
+    }
+    sqliteFixture.cleanup();
   }
 
   return results;

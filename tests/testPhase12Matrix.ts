@@ -4,6 +4,7 @@ import { SqlDialect } from '../server/database/SqlDialect';
 import { QuerySafetyValidator } from '../server/database/QuerySafetyValidator';
 import path from 'path';
 import fs from 'fs';
+import { createSqliteTestFixture } from './sqliteTestFixture';
 
 interface TestResult {
   name: string;
@@ -14,6 +15,7 @@ interface TestResult {
 
 export async function runComprehensiveTestMatrix(): Promise<TestResult[]> {
   const results: TestResult[] = [];
+  const sqliteFixture = createSqliteTestFixture();
 
   function assert(condition: boolean, name: string, errorMsg?: string) {
     if (condition) {
@@ -34,7 +36,7 @@ export async function runComprehensiveTestMatrix(): Promise<TestResult[]> {
     },
     {
       id: 'SQLite',
-      params: { type: 'sqlite', filePath: path.resolve(process.cwd(), 'data/datapilot_demo.sqlite') }
+      params: { type: 'sqlite', filePath: sqliteFixture.filePath }
     },
     {
       id: 'MySQL',
@@ -153,6 +155,8 @@ export async function runComprehensiveTestMatrix(): Promise<TestResult[]> {
     console.log(`${type.padEnd(12)} | dateFunctions     | ${caps.dateFunctions ? 'YES' : 'NO '} | SQL Dialect     | PASS`);
     console.log(`${type.padEnd(12)} | limitSyntax       | ${caps.limitSyntax.padEnd(5)} | SQL Dialect     | PASS`);
   }
+
+  sqliteFixture.cleanup();
 
   return results;
 }

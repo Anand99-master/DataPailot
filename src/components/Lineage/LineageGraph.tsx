@@ -1,5 +1,6 @@
 import React, { useMemo, useCallback } from 'react';
-import ReactFlow, { 
+import {
+  ReactFlow,
   Background, 
   Controls, 
   MiniMap, 
@@ -10,7 +11,8 @@ import ReactFlow, {
   Position,
   useNodesState,
   useEdgesState
-} from 'react-flow-renderer';
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import { DiscoveredTable, DatabaseRelationship } from '../../types/database';
 import { Database } from 'lucide-react';
 
