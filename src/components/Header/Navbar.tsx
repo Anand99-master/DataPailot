@@ -4,8 +4,6 @@ import {
   Sparkles,
   Shield,
   Terminal,
-  LogOut,
-  RefreshCw,
   Code2,
   BarChart3,
   PieChart,
@@ -64,13 +62,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const navContainerRef = useRef<HTMLElement>(null);
   const [visibleCount, setVisibleCount] = useState<number>(8);
-
-  const isConnected = Boolean(connection?.isConnected);
-  const typeLabel = connection?.type
-    ? connection.type === 'postgresql'
-      ? 'PostgreSQL'
-      : connection.type.toUpperCase()
-    : '';
 
   // Close "More" dropdown when clicking outside
   useEffect(() => {
@@ -157,48 +148,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="min-w-0 flex-shrink-1">
           <WorkspaceSelector onOpenAdminConsole={onOpenAdminConsole} />
         </div>
-
-        <div className="h-3 w-px bg-slate-800 hidden md:block flex-shrink-0" />
-
-        {/* Database Connection Pill */}
-        {isConnected ? (
-          <div className="hidden lg:flex items-center space-x-1.5 flex-shrink-0">
-            <button
-              onClick={onOpenConnectModal}
-              className="flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 transition-colors truncate max-w-[160px]"
-              title="View connection parameters"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-              <span className="truncate">{typeLabel}</span>
-              <span className="text-slate-400 font-mono text-[10px] truncate">({connection?.database})</span>
-            </button>
-
-            <button
-              onClick={onRefreshSchema}
-              disabled={isRefreshing}
-              className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors disabled:opacity-40"
-              title="Refresh Schema"
-            >
-              <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin text-emerald-400' : ''}`} />
-            </button>
-
-            <button
-              onClick={onDisconnect}
-              className="flex items-center p-1 rounded text-[11px] text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 border border-rose-900/40 transition-colors"
-              title="Disconnect from database"
-            >
-              <LogOut className="w-3 h-3" />
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={onOpenConnectModal}
-            className="hidden lg:flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-800 hover:bg-slate-750 border border-slate-700/80 transition-colors flex-shrink-0"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
-            <span className="text-slate-300 text-[11px]">No DB</span>
-          </button>
-        )}
       </div>
 
       {/* Center: Mode / View Switcher */}
