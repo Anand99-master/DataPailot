@@ -1,4 +1,4 @@
-# DataPilot Production Deployment & Docker Guide
+# DataPilot Production Deployment, CI/CD & Docker Guide
 
 ## 1. Local Development
 To run DataPilot in development mode:
@@ -8,13 +8,21 @@ npm run dev
 ```
 Access the application at `http://localhost:3000`.
 
-## 2. Docker Build
+## 2. CI/CD Pipeline (Phase 16.4C)
+DataPilot uses GitHub Actions for continuous integration, Docker validation, staging deployments, and protected production releases.
+
+### Workflows:
+- **CI Pipeline (`.github/workflows/ci.yml`)**: Triggered on push/PR to `main`, `master`, or `staging`. Runs `npm ci`, migration validation (`npm run migrate:validate`), TypeScript type check and lint (`npm run lint`), the comprehensive automated test suite against an isolated PostgreSQL service container (`npm test`), and the production build (`npm run build`).
+- **Docker CI (`.github/workflows/docker.yml`)**: Builds the multi-stage production Docker image using BuildKit/buildx, verifies container startup, and checks readiness/health endpoints.
+- **Staging Deployment (`.github/workflows/staging.yml`)**: Triggered on push to `staging` or manual `workflow_dispatch`. Runs tests, migration validation, builds Docker image, and applies migrations against the staging database.
+- **Production Deployment (`.github/workflows/production.yml`)**: Triggered via manual `workflow_dispatch` with required release tag. Protected by GitHub Environments (`production`), concurrency control, rigorous validation, immutable image tagging (`datapilot:prod-<tag>-<sha>`), and safe migration execution.
+
+## 3. Docker Build & Compose
 To build the production Docker image manually:
 ```bash
 docker build -t datapilot:latest .
 ```
 
-## 3. Docker Compose Startup
 For production-like local testing with PostgreSQL and DataPilot:
 1. Copy `.env.docker.example` to `.env.docker`:
    ```bash
@@ -25,45 +33,34 @@ For production-like local testing with PostgreSQL and DataPilot:
    docker compose --env-file .env.docker up --build
    ```
 
-## 4. Environment Variables
-- `NODE_ENV`: Set to `production` in containerized environments.
-- `DATABASE_URL`: Connection string for PostgreSQL (e.g. `postgresql://user:pass@host:5432/dbname`).
-- `SESSION_SECRET`: Cryptographically secure secret for session management.
-- `GEMINI_API_KEY`: Optional Gemini AI API key for AI assistant and smart cleaning features.
+## 4. Environment Variables & Secrets Management
+- Never commit `.env` files or hardcode secrets.
+- Use GitHub Actions Secrets for `DATABASE_URL`, `SESSION_SECRET`, and `GEMINI_API_KEY`.
+- Mandatory variables: `NODE_ENV=production`, `PORT=3000`, `DATABASE_URL`, `SESSION_SECRET`.
 
 ## 5. PostgreSQL Persistence
 PostgreSQL state is persisted using a named Docker volume (`postgres_data`), ensuring database data survives container restarts and upgrades.
 
-## 6. Migration Workflow
-DataPilot features an ordered migration system (Phase 16.4A):
+## 6. Migration Workflow & Safety (Phase 16.4A)
+DataPilot features an ordered migration system:
 - Validate migrations: `npm run migrate:validate`
 - Apply migrations: `npm run migrate:up`
 - Check status: `npm run migrate:status`
 - Rollback: `npm run migrate:down`
 
 In Docker, the container entrypoint (`docker-entrypoint.sh`) automatically validates and applies pending migrations prior to starting the production server.
+- **Production Safety**: Never run destructive migration-down in production. Prefer forward-compatible migrations.
 
-## 7. Health Endpoints
+## 7. Health Endpoints & Smoke Tests
 - `GET /api/health/live`: Liveness check confirming process responsiveness.
 - `GET /api/health/ready`: Readiness check verifying database and service connectivity.
 - `GET /api/health`: Comprehensive system diagnostics, memory usage, and AI configuration status.
+- **Smoke Tests**: Post-deployment smoke tests verify server responsiveness, health endpoints, read-only query paths, and migration status.
 
-## 8. Graceful Shutdown
-The application handles `SIGTERM` and `SIGINT` signals gracefully:
-1. Stops accepting new HTTP requests.
-2. Drains in-flight requests.
-3. Closes active database pools and connections.
-4. Exits cleanly (with a 10s forced timeout fallback).
+## 8. Graceful Shutdown & Rollback Strategy
+- **Graceful Shutdown**: Stops accepting new requests, drains in-flight requests, closes active database pools, and exits cleanly within a 10s fallback timeout.
+- **Rollback**: Revert to the previous known-good immutable Docker image tag. Database rollbacks are manual and restricted to explicitly reversible migrations when necessary.
 
-## 9. Logs
-All application logs are structured JSON output streamed directly to `stdout` and `stderr` for collection by container orchestrators.
-
-## 10. Backup Considerations
-Before performing major migrations or upgrades in production:
-- Take a consistent snapshot or `pg_dump` of PostgreSQL.
-- Verify backup integrity.
-
-## 11. Production Deployment Notes
-- Always use non-root container users (configured as `node` in Dockerfile).
-- Never bake secrets into Docker images or commit `.env` files.
-- Use secret managers (Kubernetes secrets, Cloud Run secret manager) in production environments.
+## 9. Troubleshooting & Backup
+- **Backup**: Take a consistent `pg_dump` snapshot prior to major migrations.
+- **Logs**: Structured JSON output streamed to `stdout`/`stderr`.

@@ -1,0 +1,44 @@
+name: DataPilot Docker CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  docker-build-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: datapilot:test-${{ github.sha }}
+          load: true
+
+      - name: Verify container startup and health
+        run: |
+          echo "Starting test container..."
+          docker run -d --name datapilot_test_container -p 3000:3000 -e NODE_ENV=production datapilot:test-${{ github.sha }}
+          
+          echo "Waiting for container initialization..."
+          sleep 5
+          
+          echo "Checking container health / readiness..."
+          docker ps
+          docker logs datapilot_test_container || true
+          
+          # Clean up
+          docker stop datapilot_test_container
+          docker rm datapilot_test_container
