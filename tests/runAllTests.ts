@@ -25,6 +25,7 @@ import { runPhase16_4Tests } from './testPhase16_4Production';
 import { runMigrationTests } from './testMigrations';
 import { runDockerAndProductionTests } from './testDockerAndProduction';
 import { runDeploymentSmokeTests } from './testDeploymentSmoke';
+import { runProductionReadinessAudit } from './testProductionReadiness';
 
 console.log('\n============================================================');
 console.log('DATAPILOT PHASE 8: AUTOMATED TEST SUITE & REGRESSION MATRIX');
@@ -62,7 +63,8 @@ const suites: TestGroup[] = [
   { name: '23. PHASE 16.4 PRODUCTION DEPLOYMENT & INFRASTRUCTURE', runner: runPhase16_4Tests },
   { name: '24. PHASE 16.4A PRODUCTION MIGRATION SYSTEM', runner: runMigrationTests },
   { name: '25. PHASE 16.4B DOCKER & PRODUCTION RUNTIME', runner: runDockerAndProductionTests },
-  { name: '26. PHASE 16.4C DEPLOYMENT SMOKE TESTS', runner: runDeploymentSmokeTests }
+  { name: '26. PHASE 16.4C DEPLOYMENT SMOKE TESTS', runner: runDeploymentSmokeTests },
+  { name: '27. PHASE 16.5 PRODUCTION READINESS QA AUDIT', runner: runProductionReadinessAudit }
 ];
 
 async function runAll() {
