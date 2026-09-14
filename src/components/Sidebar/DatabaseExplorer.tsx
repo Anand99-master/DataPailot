@@ -20,11 +20,8 @@ import {
   Info,
   Search
 } from 'lucide-react';
-import {
-  DiscoveredTable,
-  SanitizedConnectionInfo,
-  TableDetailsResult
-} from '../../types/database';
+import { SanitizedConnectionInfo, DiscoveredTable, TableDetailsResult } from '../../types/database';
+import { DataPilotLogo } from '../common/DataPilotLogo';
 import { ImportedDataset } from '../../types/import';
 import { TableDetailsPanel } from './TableDetailsPanel';
 
@@ -105,20 +102,7 @@ export const DatabaseExplorer: React.FC<DatabaseExplorerProps> = ({
     >
       {/* Brand Header */}
       <div className="p-3.5 border-b border-slate-800 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center space-x-2.5">
-          <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shadow-inner">
-            <Database className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-1.5">
-              <span className="font-semibold text-xs tracking-tight text-white">DataPilot</span>
-              <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded">
-                IDE
-              </span>
-            </div>
-            <p className="text-[10px] text-slate-400 font-medium">Data Analysis Workspace</p>
-          </div>
-        </div>
+        <DataPilotLogo variant="full" size="sm" showTagline={true} />
       </div>
 
       {/* Database Connection Section */}

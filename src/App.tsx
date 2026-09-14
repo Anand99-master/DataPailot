@@ -1062,6 +1062,7 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
                     approximateRowCount: newDs.rowCount
                   });
                 }}
+                onOpenImportModal={() => setIsImportModalOpen(true)}
               />
             ) : activeWorkspaceView === 'reports' ? (
               <ReportsWorkspace />

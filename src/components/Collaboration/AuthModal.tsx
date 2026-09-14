@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useCollaboration } from '../../context/CollaborationContext';
 import { UserRole } from '../../types/collaboration';
 import { X, Lock, Mail, User as UserIcon, Shield, CheckCircle2, AlertCircle, KeyRound, Sparkles } from 'lucide-react';
+import { DataPilotLogo } from '../common/DataPilotLogo';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -64,9 +65,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, defaultTa
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
           <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-              <Shield className="w-4 h-4" />
-            </div>
+            <DataPilotLogo variant="icon" size="sm" />
             <div>
               <h3 className="text-sm font-semibold text-white">
                 {user ? 'User Profile & Authentication' : tab === 'login' ? 'Sign In to DataPilot' : 'Create DataPilot Account'}

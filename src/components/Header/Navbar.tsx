@@ -24,6 +24,7 @@ import { SanitizedConnectionInfo } from '../../types/database';
 import { WorkspaceSelector } from '../Collaboration/WorkspaceSelector';
 import { NotificationsPopover } from '../Collaboration/NotificationsPopover';
 import { useCollaboration } from '../../context/CollaborationContext';
+import { DataPilotLogo } from '../common/DataPilotLogo';
 
 interface NavbarProps {
   connection: SanitizedConnectionInfo | null;
@@ -61,6 +62,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { user } = useCollaboration();
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
+  const navContainerRef = useRef<HTMLElement>(null);
+  const [visibleCount, setVisibleCount] = useState<number>(8);
 
   const isConnected = Boolean(connection?.isConnected);
   const typeLabel = connection?.type
@@ -82,33 +85,70 @@ export const Navbar: React.FC<NavbarProps> = ({
     };
   }, []);
 
-  const isSecondaryActive = ['reports', 'data-quality', 'cleaning', 'lineage'].includes(activeView);
+  const navItems: Array<{
+    id: 'editor' | 'analysis' | 'visualization' | 'dashboards' | 'reports' | 'data-quality' | 'cleaning' | 'lineage';
+    label: string;
+    icon: any;
+    color: string;
+    activeClass: string;
+  }> = [
+    { id: 'editor', label: 'SQL', icon: Code2, color: 'text-indigo-400', activeClass: 'bg-slate-800 text-white' },
+    { id: 'analysis', label: 'Analysis', icon: BarChart3, color: 'text-emerald-400', activeClass: 'bg-indigo-600 text-white' },
+    { id: 'visualization', label: 'Visuals', icon: PieChart, color: 'text-purple-300', activeClass: 'bg-purple-600 text-white' },
+    { id: 'dashboards', label: 'Dashboards', icon: LayoutDashboard, color: 'text-emerald-300', activeClass: 'bg-emerald-600 text-white' },
+    { id: 'reports', label: 'Reports', icon: FileText, color: 'text-cyan-300', activeClass: 'bg-cyan-600 text-white' },
+    { id: 'data-quality', label: 'Quality', icon: ShieldAlert, color: 'text-rose-300', activeClass: 'bg-rose-600 text-white' },
+    { id: 'cleaning', label: 'Cleaning', icon: Wand2, color: 'text-cyan-300', activeClass: 'bg-cyan-600 text-white' },
+    { id: 'lineage', label: 'Lineage', icon: Database, color: 'text-amber-300', activeClass: 'bg-amber-600 text-white' },
+  ];
 
-  const getSecondaryActiveLabel = () => {
-    switch (activeView) {
-      case 'reports':
-        return 'Reports';
-      case 'data-quality':
-        return 'Quality';
-      case 'cleaning':
-        return 'Cleaning';
-      case 'lineage':
-        return 'Lineage';
-      default:
-        return 'More';
+  // Measured overflow calculation using ResizeObserver
+  useEffect(() => {
+    const updateVisibleCount = () => {
+      if (!navContainerRef.current) return;
+      const width = navContainerRef.current.clientWidth;
+      // Adaptive thresholds based on measured navbar available width
+      if (width >= 720) {
+        setVisibleCount(8);
+      } else if (width >= 580) {
+        setVisibleCount(6);
+      } else if (width >= 460) {
+        setVisibleCount(5);
+      } else {
+        setVisibleCount(4);
+      }
+    };
+
+    updateVisibleCount();
+    const observer = new ResizeObserver(() => {
+      updateVisibleCount();
+    });
+
+    if (navContainerRef.current) {
+      observer.observe(navContainerRef.current);
     }
-  };
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  const visibleItems = navItems.slice(0, visibleCount);
+  const overflowItems = navItems.slice(visibleCount);
+  
+  // Check if active view is in overflow items
+  const activeOverflowItem = overflowItems.find(item => item.id === activeView);
+  const isSecondaryActive = Boolean(activeOverflowItem);
 
   return (
     <header
       id="workspace-navbar"
-      className="h-12 max-h-12 min-h-12 border-b border-slate-800 bg-slate-900/95 flex items-center justify-between px-2.5 text-slate-200 select-none z-30 flex-shrink-0 w-full"
+      className="h-12 max-h-12 min-h-12 border-b border-slate-800 bg-slate-900/95 flex items-center justify-between px-2.5 text-slate-200 select-none z-30 flex-shrink-0 w-full relative"
     >
       {/* Left: Breadcrumbs & Workspace Switcher & Connection */}
       <div className="flex items-center space-x-1.5 md:space-x-2 min-w-0 flex-shrink-0">
-        <div className="flex items-center space-x-1.5 flex-shrink-0">
-          <Terminal className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-          <span className="text-xs font-semibold text-white tracking-wide hidden sm:inline">DataPilot</span>
+        <div className="flex items-center flex-shrink-0">
+          <DataPilotLogo variant="compact" size="sm" />
         </div>
 
         <div className="h-3 w-px bg-slate-800 hidden sm:block flex-shrink-0" />
@@ -164,198 +204,102 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Center: Mode / View Switcher */}
       {onViewChange && (
         <nav
+          ref={navContainerRef}
           aria-label="Workspace Views"
-          className="flex items-center p-0.5 rounded-lg bg-slate-950 border border-slate-800 min-w-0 flex-shrink-1 mx-1.5 overflow-hidden"
+          className="flex items-center p-0.5 rounded-lg bg-slate-950 border border-slate-800 min-w-0 flex-shrink-1 mx-1.5 relative overflow-visible"
         >
-          {/* Primary View: SQL */}
-          <button
-            id="tab-btn-sql-editor"
-            type="button"
-            onClick={() => onViewChange('editor')}
-            className={`flex items-center space-x-1 px-2 py-1 rounded-md text-xs font-medium transition-all flex-shrink-0 ${
-              activeView === 'editor'
-                ? 'bg-slate-800 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Code2 className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
-            <span>SQL</span>
-          </button>
-
-          {/* Primary View: Analysis */}
-          <button
-            id="tab-btn-analysis-toolkit"
-            type="button"
-            onClick={() => onViewChange('analysis')}
-            className={`flex items-center space-x-1 px-2 py-1 rounded-md text-xs font-medium transition-all flex-shrink-0 ${
-              activeView === 'analysis'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <BarChart3 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-            <span>Analysis</span>
-          </button>
-
-          {/* Primary View: Visuals */}
-          <button
-            id="tab-btn-visualization"
-            type="button"
-            onClick={() => onViewChange('visualization')}
-            className={`flex items-center space-x-1 px-2 py-1 rounded-md text-xs font-medium transition-all flex-shrink-0 ${
-              activeView === 'visualization'
-                ? 'bg-purple-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <PieChart className="w-3.5 h-3.5 text-purple-300 flex-shrink-0" />
-            <span>Visuals</span>
-          </button>
-
-          {/* Primary View: Dashboards */}
-          <button
-            id="tab-btn-dashboards"
-            type="button"
-            onClick={() => onViewChange('dashboards')}
-            className={`flex items-center space-x-1 px-2 py-1 rounded-md text-xs font-medium transition-all flex-shrink-0 ${
-              activeView === 'dashboards'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <LayoutDashboard className="w-3.5 h-3.5 text-emerald-300 flex-shrink-0" />
-            <span>Dashboards</span>
-          </button>
-
-          {/* Secondary Views (Always visible on large screens, or cleanly accessible) */}
-          <button
-            id="tab-btn-reports"
-            type="button"
-            onClick={() => onViewChange('reports')}
-            className={`hidden xl:flex items-center space-x-1 px-2 py-1 rounded-md text-xs font-medium transition-all flex-shrink-0 ${
-              activeView === 'reports'
-                ? 'bg-cyan-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5 text-cyan-300 flex-shrink-0" />
-            <span>Reports</span>
-          </button>
-
-          <button
-            id="tab-btn-data-quality"
-            type="button"
-            onClick={() => onViewChange('data-quality')}
-            className={`hidden xl:flex items-center space-x-1 px-2 py-1 rounded-md text-xs font-medium transition-all flex-shrink-0 ${
-              activeView === 'data-quality'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <ShieldAlert className="w-3.5 h-3.5 text-rose-300 flex-shrink-0" />
-            <span>Quality</span>
-          </button>
-
-          <button
-            id="tab-btn-cleaning"
-            type="button"
-            onClick={() => onViewChange('cleaning')}
-            className={`hidden 2xl:flex items-center space-x-1 px-2 py-1 rounded-md text-xs font-medium transition-all flex-shrink-0 ${
-              activeView === 'cleaning'
-                ? 'bg-cyan-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Wand2 className="w-3.5 h-3.5 text-cyan-300 flex-shrink-0" />
-            <span>Cleaning</span>
-          </button>
-
-          <button
-            id="tab-btn-lineage"
-            type="button"
-            onClick={() => onViewChange('lineage')}
-            className={`hidden 2xl:flex items-center space-x-1 px-2 py-1 rounded-md text-xs font-medium transition-all flex-shrink-0 ${
-              activeView === 'lineage'
-                ? 'bg-amber-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
-            <span>Lineage</span>
-          </button>
-
-          {/* Responsive Overflow "More" Dropdown Menu for Viewports < 2xl */}
-          <div ref={moreMenuRef} className="relative 2xl:hidden flex-shrink-0">
-            <button
-              id="tab-btn-more-views"
-              type="button"
-              onClick={() => setIsMoreMenuOpen(prev => !prev)}
-              className={`flex items-center space-x-1 px-2 py-1 rounded-md text-xs font-medium transition-all ${
-                isSecondaryActive
-                  ? 'bg-slate-800 text-emerald-300 shadow-xs border border-emerald-500/30'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="More views (Reports, Quality, Cleaning, Lineage)"
-              aria-label="More views"
-            >
-              {isSecondaryActive ? (
-                <span>{getSecondaryActiveLabel()}</span>
-              ) : (
-                <>
-                  <MoreHorizontal className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span className="hidden sm:inline">More</span>
-                </>
-              )}
-              <ChevronDown className="w-3 h-3 ml-0.5 opacity-70" />
-            </button>
-
-            {isMoreMenuOpen && (
-              <div
-                className="absolute left-0 top-full mt-1 w-44 bg-slate-900 border border-slate-800 rounded-lg shadow-xl py-1 z-50 text-xs text-slate-200"
-                onClick={() => setIsMoreMenuOpen(false)}
+          {visibleItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeView === item.id;
+            return (
+              <button
+                key={item.id}
+                id={`tab-btn-${item.id}`}
+                type="button"
+                onClick={() => onViewChange(item.id)}
+                className={`flex items-center space-x-1 px-2 py-1 rounded-md text-xs font-medium transition-all flex-shrink-0 ${
+                  isActive
+                    ? `${item.activeClass} shadow-xs`
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
               >
-                <button
-                  onClick={() => onViewChange('reports')}
-                  className={`w-full px-3 py-2 text-left flex items-center space-x-2 hover:bg-slate-800 transition-colors ${
-                    activeView === 'reports' ? 'bg-cyan-950/60 text-cyan-300 font-semibold' : 'text-slate-300'
-                  }`}
-                >
-                  <FileText className="w-3.5 h-3.5 text-cyan-300" />
-                  <span>Reports</span>
-                </button>
+                <Icon className={`w-3.5 h-3.5 ${item.color} flex-shrink-0`} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
 
-                <button
-                  onClick={() => onViewChange('data-quality')}
-                  className={`w-full px-3 py-2 text-left flex items-center space-x-2 hover:bg-slate-800 transition-colors ${
-                    activeView === 'data-quality' ? 'bg-rose-950/60 text-rose-300 font-semibold' : 'text-slate-300'
-                  }`}
-                >
-                  <ShieldAlert className="w-3.5 h-3.5 text-rose-300" />
-                  <span>Data Quality</span>
-                </button>
+          {/* Responsive Overflow "More" Dropdown Menu */}
+          {overflowItems.length > 0 && (
+            <div
+              ref={moreMenuRef}
+              className="relative flex-shrink-0 ml-0.5"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && isMoreMenuOpen) {
+                  setIsMoreMenuOpen(false);
+                }
+              }}
+            >
+              <button
+                id="tab-btn-more-views"
+                type="button"
+                onClick={() => setIsMoreMenuOpen(prev => !prev)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setIsMoreMenuOpen(prev => !prev);
+                  }
+                }}
+                className={`flex items-center space-x-1 px-2 py-1 rounded-md text-xs font-medium transition-all ${
+                  isSecondaryActive
+                    ? 'bg-slate-800 text-emerald-300 shadow-xs border border-emerald-500/30'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="More views (Reports, Quality, Cleaning, Lineage)"
+                aria-label="More views"
+                aria-expanded={isMoreMenuOpen}
+                aria-haspopup="true"
+              >
+                {isSecondaryActive && activeOverflowItem ? (
+                  <>
+                    <activeOverflowItem.icon className={`w-3.5 h-3.5 ${activeOverflowItem.color} flex-shrink-0`} />
+                    <span>{activeOverflowItem.label}</span>
+                  </>
+                ) : (
+                  <>
+                    <MoreHorizontal className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span className="hidden sm:inline">More</span>
+                  </>
+                )}
+                <ChevronDown className="w-3 h-3 ml-0.5 opacity-70" />
+              </button>
 
-                <button
-                  onClick={() => onViewChange('cleaning')}
-                  className={`w-full px-3 py-2 text-left flex items-center space-x-2 hover:bg-slate-800 transition-colors ${
-                    activeView === 'cleaning' ? 'bg-cyan-950/60 text-cyan-300 font-semibold' : 'text-slate-300'
-                  }`}
+              {isMoreMenuOpen && (
+                <div
+                  className="absolute left-0 top-full mt-1 w-48 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl py-1 z-50 text-xs text-slate-200"
+                  onClick={() => setIsMoreMenuOpen(false)}
                 >
-                  <Wand2 className="w-3.5 h-3.5 text-cyan-300" />
-                  <span>Data Cleaning</span>
-                </button>
-
-                <button
-                  onClick={() => onViewChange('lineage')}
-                  className={`w-full px-3 py-2 text-left flex items-center space-x-2 hover:bg-slate-800 transition-colors ${
-                    activeView === 'lineage' ? 'bg-amber-950/60 text-amber-300 font-semibold' : 'text-slate-300'
-                  }`}
-                >
-                  <Database className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Data Lineage</span>
-                </button>
-              </div>
-            )}
-          </div>
+                  {overflowItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeView === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => onViewChange(item.id)}
+                        className={`w-full px-3 py-2 text-left flex items-center space-x-2 hover:bg-slate-800 transition-colors ${
+                          isActive ? 'bg-slate-800 text-white font-semibold' : 'text-slate-300'
+                        }`}
+                      >
+                        <Icon className={`w-3.5 h-3.5 ${item.color}`} />
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </nav>
       )}
 
@@ -436,17 +380,32 @@ export const Navbar: React.FC<NavbarProps> = ({
             id="btn-user-profile"
             type="button"
             onClick={onOpenAuthModal}
-            className="flex items-center space-x-1.5 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs transition-colors flex-shrink-0"
-            title="User Profile & Settings"
+            className={`flex items-center space-x-1.5 px-2 py-1 rounded-md text-xs font-medium border transition-colors flex-shrink-0 ${
+              user
+                ? 'bg-emerald-950/40 border-emerald-700/60 text-emerald-300 hover:bg-emerald-900/40'
+                : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'
+            }`}
+            title={user ? `Signed in as ${user.email}` : 'Sign in / Authentication'}
             aria-label="User Profile"
           >
-            <div className="w-5 h-5 rounded-full bg-emerald-600/30 border border-emerald-500/50 flex items-center justify-center font-bold text-[10px] text-emerald-300 flex-shrink-0">
-              {(user?.name || 'A').charAt(0).toUpperCase()}
-            </div>
-            <span className="hidden xl:inline max-w-[80px] truncate">{user?.name || 'Account'}</span>
+            {user ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+                <span className="hidden lg:inline truncate max-w-[100px]">{user.name}</span>
+                <span className="text-[10px] uppercase font-mono px-1 bg-emerald-900/50 text-emerald-300 rounded">
+                  {user.role}
+                </span>
+              </>
+            ) : (
+              <>
+                <UserIcon className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                <span className="hidden lg:inline">Sign In</span>
+              </>
+            )}
           </button>
         )}
       </div>
     </header>
   );
 };
+
