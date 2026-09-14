@@ -15,7 +15,7 @@ RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json* ./
 
 # Install all dependencies (including devDependencies for building frontend/backend)
-RUN npm ci --legacy-peer-deps
+RUN npm ci
 
 # Copy source files
 COPY . .
@@ -38,8 +38,6 @@ RUN apk add --no-cache curl python3 make g++ build-base
 # Copy package files and install production dependencies only
 COPY package.json package-lock.json* ./
 COPY --from=builder /app/node_modules ./node_modules
-RUN npm cache clean --force
-
 # Remove build tools to keep final image slim and secure
 RUN apk del python3 make g++ build-base
 
