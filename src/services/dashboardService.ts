@@ -4,12 +4,34 @@ const DASHBOARDS_STORAGE_KEY = 'datapilot_saved_dashboards';
 const LAST_OPENED_KEY = 'datapilot_last_opened_dashboard_id';
 
 export class DashboardService {
+  private static workspaceId: string = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_workspace_id')) || 'ws_primary';
+
+  public static setWorkspaceId(id: string) {
+    this.workspaceId = id;
+  }
+
+  public static getWorkspaceId(): string {
+    return this.workspaceId;
+  }
+
+  private static getStorageKey(): string {
+    return `${DASHBOARDS_STORAGE_KEY}_${this.workspaceId}`;
+  }
+
+  private static getLastOpenedKey(): string {
+    return `${LAST_OPENED_KEY}_${this.workspaceId}`;
+  }
+
   /**
    * Retrieves all saved dashboards from localStorage
    */
   public static getDashboards(): Dashboard[] {
     try {
-      const raw = localStorage.getItem(DASHBOARDS_STORAGE_KEY);
+      let raw = localStorage.getItem(this.getStorageKey());
+      // Backward compatibility for primary workspace
+      if (!raw && this.workspaceId === 'ws_primary') {
+        raw = localStorage.getItem(DASHBOARDS_STORAGE_KEY);
+      }
       if (!raw) return [];
       const parsed: Dashboard[] = JSON.parse(raw);
       return Array.isArray(parsed) ? parsed : [];
@@ -47,7 +69,7 @@ export class DashboardService {
     }
 
     try {
-      localStorage.setItem(DASHBOARDS_STORAGE_KEY, JSON.stringify(newList));
+      localStorage.setItem(this.getStorageKey(), JSON.stringify(newList));
     } catch (e) {
       console.error('Failed to persist dashboards:', e);
     }
@@ -116,9 +138,9 @@ export class DashboardService {
     if (filtered.length === list.length) return false;
 
     try {
-      localStorage.setItem(DASHBOARDS_STORAGE_KEY, JSON.stringify(filtered));
+      localStorage.setItem(this.getStorageKey(), JSON.stringify(filtered));
       if (this.getLastOpenedDashboardId() === id) {
-        localStorage.removeItem(LAST_OPENED_KEY);
+        localStorage.removeItem(this.getLastOpenedKey());
       }
       return true;
     } catch {
@@ -213,10 +235,10 @@ export class DashboardService {
   }
 
   public static getLastOpenedDashboardId(): string | null {
-    return localStorage.getItem(LAST_OPENED_KEY);
+    return localStorage.getItem(this.getLastOpenedKey()) || localStorage.getItem(LAST_OPENED_KEY);
   }
 
   public static setLastOpenedDashboardId(id: string): void {
-    localStorage.setItem(LAST_OPENED_KEY, id);
+    localStorage.setItem(this.getLastOpenedKey(), id);
   }
 }

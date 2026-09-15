@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { ConnectionManager } from '../database/ConnectionManager';
 import { UnifiedDataLayer } from '../import/UnifiedDataLayer';
 import { getSessionId } from './connectionRoutes';
+import { getSessionDatasetStoreKey } from '../utils/workspaceHelper';
 import { ApiValidation } from '../utils/apiValidation';
 import { ApiResponse } from '../utils/apiResponse';
 import { Logger } from '../utils/logger';
@@ -18,8 +19,9 @@ const unifiedDataLayer = UnifiedDataLayer.getInstance();
 schemaRoutes.get('/tables', async (req: Request, res: Response) => {
   try {
     const sessionId = getSessionId(req, res);
+    const storeKey = getSessionDatasetStoreKey(req, res);
     const adapter = connectionManager.getAdapter(sessionId);
-    const importedTables = unifiedDataLayer.listDiscoveredTables(sessionId);
+    const importedTables = unifiedDataLayer.listDiscoveredTables(storeKey);
 
     if (!adapter || !adapter.isConnected()) {
       res.json({
@@ -60,12 +62,13 @@ schemaRoutes.get('/tables', async (req: Request, res: Response) => {
 schemaRoutes.get('/tables/:schema/:table', async (req: Request, res: Response) => {
   try {
     const sessionId = getSessionId(req, res);
+    const storeKey = getSessionDatasetStoreKey(req, res);
     const adapter = connectionManager.getAdapter(sessionId);
     const { schema, table } = req.params;
 
     // Check if it's an imported dataset
     if (schema === 'imported' || !adapter || !adapter.isConnected()) {
-      const importedDetails = unifiedDataLayer.getTableDetails(sessionId, table);
+      const importedDetails = unifiedDataLayer.getTableDetails(storeKey, table);
       if (importedDetails) {
         res.json({
           success: true,

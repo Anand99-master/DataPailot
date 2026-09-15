@@ -111,6 +111,7 @@ export interface DataPreview {
 
 export interface ImportedDataset {
   datasetId: string;
+  workspaceId?: string;
   sourceType: DataSourceType;
   sourceName: string;
   fileType: FileType;

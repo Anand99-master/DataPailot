@@ -3,6 +3,23 @@ import { AiCleaningPlan, AiReanalysisResult } from '../types/aiCleaning';
 import { ExportFormat } from '../types/import';
 
 export class CleaningApiClient {
+  private static workspaceId: string = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_workspace_id')) || 'ws_primary';
+
+  public static setWorkspaceId(id: string) {
+    this.workspaceId = id;
+  }
+
+  public static getWorkspaceId(): string {
+    return this.workspaceId;
+  }
+
+  private static getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+    return {
+      'x-workspace-id': this.workspaceId,
+      ...extraHeaders
+    };
+  }
+
   /**
    * Runs AI and Data Quality analysis to generate smart cleaning recommendations
    */
@@ -12,7 +29,7 @@ export class CleaningApiClient {
   ): Promise<AiCleaningPlan> {
     const res = await fetch('/api/cleaning/ai/analyze', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ datasetId, steps })
     });
 
@@ -33,7 +50,7 @@ export class CleaningApiClient {
   ): Promise<AiReanalysisResult> {
     const res = await fetch('/api/cleaning/ai/reanalyze', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ datasetId, steps })
     });
 
@@ -54,7 +71,7 @@ export class CleaningApiClient {
   ): Promise<CleaningPreviewResult> {
     const res = await fetch('/api/cleaning/preview', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ datasetId, steps })
     });
 
@@ -77,7 +94,7 @@ export class CleaningApiClient {
   ): Promise<CleanedDatasetSaveResult> {
     const res = await fetch('/api/cleaning/save', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ datasetId, newDatasetName, steps, pipelineMetadata })
     });
 
@@ -100,7 +117,7 @@ export class CleaningApiClient {
   ): Promise<void> {
     const res = await fetch('/api/cleaning/export', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ datasetId, steps, format, customName })
     });
 

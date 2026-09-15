@@ -20,6 +20,26 @@ router.get('/queries', requireAuth, requirePermission('query.read'), (req: Reque
   }
 });
 
+router.get('/queries/:id', requireAuth, requirePermission('query.read'), (req: Request, res: Response) => {
+  try {
+    const store = CollaborationStore.getInstance();
+    const query = store.getSavedQueryById(req.params.id);
+    if (!query) {
+      res.status(404).json({ success: false, error: 'Query not found.' });
+      return;
+    }
+
+    if (query.workspaceId !== req.authContext!.workspaceId) {
+      res.status(403).json({ success: false, error: 'Cannot access query from another workspace.' });
+      return;
+    }
+
+    res.json({ success: true, query });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to get query.' });
+  }
+});
+
 router.post('/queries', requireAuth, requirePermission('query.create'), (req: Request, res: Response) => {
   try {
     const store = CollaborationStore.getInstance();
@@ -201,6 +221,114 @@ router.delete('/dashboards/:id', requireAuth, requirePermission('dashboard.delet
     res.json({ success: true, message: 'Dashboard deleted.' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: 'Failed to delete dashboard.' });
+  }
+});
+
+// ==========================================
+// PIPELINES COLLABORATION API
+// ==========================================
+router.get('/pipelines', requireAuth, requirePermission('pipeline.read'), (req: Request, res: Response) => {
+  try {
+    const store = CollaborationStore.getInstance();
+    const wsId = req.authContext!.workspaceId;
+    const projectId = req.query.projectId as string | undefined;
+    const pipelines = store.listPipelines(wsId, projectId);
+    res.json({ success: true, pipelines });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to list pipelines.' });
+  }
+});
+
+router.get('/pipelines/:id', requireAuth, requirePermission('pipeline.read'), (req: Request, res: Response) => {
+  try {
+    const store = CollaborationStore.getInstance();
+    const pipeline = store.getPipelineById(req.params.id);
+    if (!pipeline) {
+      res.status(404).json({ success: false, error: 'Pipeline not found.' });
+      return;
+    }
+
+    if (pipeline.workspaceId !== req.authContext!.workspaceId) {
+      res.status(403).json({ success: false, error: 'Cannot access pipeline from another workspace.' });
+      return;
+    }
+
+    res.json({ success: true, pipeline });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to get pipeline.' });
+  }
+});
+
+router.post('/pipelines', requireAuth, requirePermission('pipeline.create'), (req: Request, res: Response) => {
+  try {
+    const store = CollaborationStore.getInstance();
+    const wsId = req.authContext!.workspaceId;
+    const userId = req.authContext!.user.id;
+    const { id, name, description, steps, datasetId, visibility, projectId } = req.body;
+
+    if (!name) {
+      res.status(400).json({ success: false, error: 'Pipeline name is required.' });
+      return;
+    }
+
+    const saved = store.savePipeline({
+      id,
+      workspaceId: wsId,
+      projectId,
+      ownerId: userId,
+      datasetId: datasetId || '',
+      name,
+      description,
+      steps: Array.isArray(steps) ? steps : [],
+      visibility
+    });
+
+    store.logActivity({
+      actorId: userId,
+      actorName: req.authContext!.user.name,
+      action: id ? 'UPDATED_PIPELINE' : 'CREATED_PIPELINE',
+      resourceType: 'pipeline',
+      resourceId: saved.id,
+      resourceName: saved.name,
+      workspaceId: wsId,
+      projectId
+    });
+
+    res.status(201).json({ success: true, pipeline: saved });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to save pipeline.' });
+  }
+});
+
+router.delete('/pipelines/:id', requireAuth, requirePermission('pipeline.delete'), (req: Request, res: Response) => {
+  try {
+    const store = CollaborationStore.getInstance();
+    const pipeline = store.getPipelineById(req.params.id);
+    if (!pipeline) {
+      res.status(404).json({ success: false, error: 'Pipeline not found.' });
+      return;
+    }
+
+    const authCheck = AccessControlService.getInstance().authorizeResource({
+      userId: req.authContext!.user.id,
+      workspaceId: req.authContext!.workspaceId,
+      resourceType: 'pipeline',
+      resourceId: pipeline.id,
+      resourceOwnerId: pipeline.ownerId,
+      resourceWorkspaceId: pipeline.workspaceId,
+      resourceVisibility: pipeline.visibility,
+      action: 'delete'
+    });
+
+    if (!authCheck.authorized) {
+      res.status(403).json({ success: false, error: authCheck.reason || 'Permission denied.' });
+      return;
+    }
+
+    store.deletePipeline(req.params.id);
+    res.json({ success: true, message: 'Pipeline deleted.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to delete pipeline.' });
   }
 });
 

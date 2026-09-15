@@ -90,6 +90,7 @@ export class UnifiedDataLayer {
       fileSize?: number;
       sheets?: string[];
       selectedSheet?: string;
+      workspaceId?: string;
       cancellationToken?: { isCancelled: () => boolean };
       jobId?: string;
       onProgress?: (progress: { rowsProcessed: number; totalRows: number; percent: number }) => void;
@@ -203,6 +204,7 @@ export class UnifiedDataLayer {
 
     const dataset: ImportedDataset = {
       datasetId,
+      workspaceId: params.workspaceId,
       sourceType: 'FILE',
       sourceName: params.sourceName,
       fileType: params.fileType,

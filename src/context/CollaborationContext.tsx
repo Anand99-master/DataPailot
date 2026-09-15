@@ -9,6 +9,21 @@ import {
   Permission
 } from '../types/collaboration';
 import { CollaborationApiClient } from '../services/collaborationApi';
+import { ImportApiClient } from '../services/importApi';
+import { DatabaseApiClient } from '../services/databaseApi';
+import { CleaningApiClient } from '../services/cleaningApi';
+import { DashboardService } from '../services/dashboardService';
+
+export const syncAllWorkspaceClients = (workspaceId: string) => {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('datapilot_active_workspace_id', workspaceId);
+  }
+  CollaborationApiClient.setWorkspaceId(workspaceId);
+  ImportApiClient.setWorkspaceId(workspaceId);
+  DatabaseApiClient.setWorkspaceId(workspaceId);
+  CleaningApiClient.setWorkspaceId(workspaceId);
+  DashboardService.setWorkspaceId(workspaceId);
+};
 
 interface CollaborationContextType {
   user: User | null;
@@ -67,7 +82,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
           const currentWs = wsRes.workspaces.find(w => w.id === authData.workspaceId) || wsRes.workspaces[0];
           if (currentWs) {
             setActiveWorkspace(currentWs);
-            CollaborationApiClient.setWorkspaceId(currentWs.id);
+            syncAllWorkspaceClients(currentWs.id);
           }
         }
       }
@@ -143,7 +158,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     if (ws) {
       setActiveWorkspace(ws);
       setActiveProject(null);
-      CollaborationApiClient.setWorkspaceId(ws.id);
+      syncAllWorkspaceClients(ws.id);
       // Re-fetch auth context for this workspace to get member role and permissions
       const authRes = await CollaborationApiClient.getCurrentAuth();
       if (authRes.success) {

@@ -51,10 +51,13 @@ export const ReportsWorkspace: React.FC = () => {
   const [sharingReport, setSharingReport] = useState<Report | null>(null);
 
   useEffect(() => {
+    setSelectedReport(null);
+    setSelectedSnapshot(null);
+    setReports([]);
     if (activeWorkspace) {
       loadReports();
     }
-  }, [activeWorkspace, activeProject]);
+  }, [activeWorkspace?.id, activeProject?.id]);
 
   const loadReports = async () => {
     setIsLoading(true);
@@ -62,8 +65,10 @@ export const ReportsWorkspace: React.FC = () => {
       const res = await CollaborationApiClient.listReports(activeProject?.id);
       if (res.success) {
         setReports(res.reports);
-        if (res.reports.length > 0 && !selectedReport) {
+        if (res.reports.length > 0) {
           selectReport(res.reports[0]);
+        } else {
+          setSelectedReport(null);
         }
       }
     } catch (err) {

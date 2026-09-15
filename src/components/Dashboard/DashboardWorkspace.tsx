@@ -48,6 +48,7 @@ import { DashboardTemplatesModal } from './DashboardTemplatesModal';
 import { DashboardAiBuilderModal } from './DashboardAiBuilderModal';
 import { DashboardInsightsDrawer } from './DashboardInsightsDrawer';
 import { AddToDashboardModal } from './AddToDashboardModal';
+import { useCollaboration } from '../../context/CollaborationContext';
 
 interface DashboardWorkspaceProps {
   discoveredTables: DiscoveredTable[];
@@ -64,6 +65,7 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
   onNavigateToVisualization,
   onNavigateToAnalysis
 }) => {
+  const { activeWorkspace } = useCollaboration();
   const [dashboards, setDashboards] = useState<Dashboard[]>([]);
   const [currentDashboardId, setCurrentDashboardId] = useState<string | null>(null);
 
@@ -98,11 +100,16 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
 
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  // Load initial dashboards
+  // Reload dashboards whenever active workspace changes
   useEffect(() => {
+    if (activeWorkspace?.id) {
+      DashboardService.setWorkspaceId(activeWorkspace.id);
+    }
     const list = DashboardService.getDashboards();
     setDashboards(list);
-  }, []);
+    setCurrentDashboardId(null);
+    setWidgetResults(new Map());
+  }, [activeWorkspace?.id]);
 
   const currentDashboard = dashboards.find(d => d.id === currentDashboardId) || null;
 

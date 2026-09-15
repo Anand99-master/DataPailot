@@ -14,6 +14,23 @@ import {
 } from '../types/database';
 
 export class DatabaseApiClient {
+  private static workspaceId: string = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_workspace_id')) || 'ws_primary';
+
+  public static setWorkspaceId(id: string) {
+    this.workspaceId = id;
+  }
+
+  public static getWorkspaceId(): string {
+    return this.workspaceId;
+  }
+
+  private static getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+    return {
+      'x-workspace-id': this.workspaceId,
+      ...extraHeaders
+    };
+  }
+
   private static async handleResponse<T>(res: Response): Promise<T> {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -25,7 +42,7 @@ export class DatabaseApiClient {
   public static async testConnection(params: DatabaseConnectionParams): Promise<ConnectionTestResult> {
     const res = await fetch('/api/database/test', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(params)
     });
     return this.handleResponse<ConnectionTestResult>(res);
@@ -34,7 +51,7 @@ export class DatabaseApiClient {
   public static async connect(params: DatabaseConnectionParams): Promise<SanitizedConnectionInfo> {
     const res = await fetch('/api/database/connect', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(params)
     });
     const data = await this.handleResponse<{ success: boolean; connection: SanitizedConnectionInfo }>(res);
@@ -44,31 +61,39 @@ export class DatabaseApiClient {
   public static async disconnect(): Promise<void> {
     const res = await fetch('/api/database/disconnect', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: this.getHeaders({ 'Content-Type': 'application/json' })
     });
     await this.handleResponse(res);
   }
 
   public static async getStatus(): Promise<{ isConnected: boolean; connection: SanitizedConnectionInfo | null }> {
-    const res = await fetch('/api/database/status');
+    const res = await fetch('/api/database/status', {
+      headers: this.getHeaders()
+    });
     return this.handleResponse(res);
   }
 
   public static async getTables(schema?: string): Promise<DiscoveredTable[]> {
     const url = schema ? `/api/database/tables?schema=${encodeURIComponent(schema)}` : '/api/database/tables';
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: this.getHeaders()
+    });
     const data = await this.handleResponse<{ success: boolean; tables: DiscoveredTable[]; count: number }>(res);
     return data.tables;
   }
 
   public static async getTableDetails(schema: string, tableName: string): Promise<TableDetailsResult> {
-    const res = await fetch(`/api/database/tables/${encodeURIComponent(schema)}/${encodeURIComponent(tableName)}`);
+    const res = await fetch(`/api/database/tables/${encodeURIComponent(schema)}/${encodeURIComponent(tableName)}`, {
+      headers: this.getHeaders()
+    });
     const data = await this.handleResponse<{ success: boolean; table: TableDetailsResult }>(res);
     return data.table;
   }
 
   public static async getDataQualityProfile(schema: string, tableName: string): Promise<any> {
-    const res = await fetch(`/api/quality/profile/${encodeURIComponent(schema)}/${encodeURIComponent(tableName)}`);
+    const res = await fetch(`/api/quality/profile/${encodeURIComponent(schema)}/${encodeURIComponent(tableName)}`, {
+      headers: this.getHeaders()
+    });
     const data = await this.handleResponse<{ success: boolean; profile: any }>(res);
     return data.profile;
   }
@@ -81,7 +106,7 @@ export class DatabaseApiClient {
   }> {
     const res = await fetch('/api/database/refresh', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ schema })
     });
     return this.handleResponse(res);
@@ -89,7 +114,9 @@ export class DatabaseApiClient {
 
   public static async getRelationships(schema?: string): Promise<DatabaseRelationship[]> {
     const url = schema ? `/api/database/relationships?schema=${encodeURIComponent(schema)}` : '/api/database/relationships';
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: this.getHeaders()
+    });
     const data = await this.handleResponse<{ success: boolean; relationships: DatabaseRelationship[] }>(res);
     return data.relationships;
   }
@@ -103,7 +130,7 @@ export class DatabaseApiClient {
     try {
       const res = await fetch('/api/database/query', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ sql, maxRows }),
         signal
       });
@@ -161,7 +188,9 @@ export class DatabaseApiClient {
 
   // AI Assistant Services
   public static async getAiStatus(): Promise<AiStatus> {
-    const res = await fetch('/api/database/ai/status');
+    const res = await fetch('/api/database/ai/status', {
+      headers: this.getHeaders()
+    });
     const data = await this.handleResponse<{ success: boolean; configured: boolean; model: string }>(res);
     return {
       configured: Boolean(data.configured),
@@ -176,7 +205,7 @@ export class DatabaseApiClient {
   ): Promise<AiSqlGenerationResult> {
     const res = await fetch('/api/database/ai/generate-sql', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ question, selectedTable, conversationHistory })
     });
     const data = await this.handleResponse<{ success: boolean; data: AiSqlGenerationResult }>(res);
@@ -186,7 +215,7 @@ export class DatabaseApiClient {
   public static async explainSqlWithAi(sql: string): Promise<AiExplainSqlResult> {
     const res = await fetch('/api/database/ai/explain-sql', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ sql })
     });
     const data = await this.handleResponse<{ success: boolean; data: AiExplainSqlResult }>(res);
@@ -202,7 +231,7 @@ export class DatabaseApiClient {
   ): Promise<AiExplainResultsResult> {
     const res = await fetch('/api/database/ai/explain-results', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ query, columns, rows, rowCount, executionTimeMs })
     });
     const data = await this.handleResponse<{ success: boolean; data: AiExplainResultsResult }>(res);
@@ -212,7 +241,7 @@ export class DatabaseApiClient {
   public static async fixSqlWithAi(failedSql: string, errorMessage: string): Promise<AiFixSqlResult> {
     const res = await fetch('/api/database/ai/fix-error', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ failedSql, errorMessage })
     });
     const data = await this.handleResponse<{ success: boolean; data: AiFixSqlResult }>(res);
@@ -236,7 +265,7 @@ export class DatabaseApiClient {
   }> {
     const res = await fetch('/api/database/ai/generate-dashboard', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ prompt })
     });
     const data = await this.handleResponse<{ success: boolean; data: any }>(res);
@@ -258,7 +287,7 @@ export class DatabaseApiClient {
   }> {
     const res = await fetch('/api/database/ai/dashboard-insights', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ dashboardName, widgetSummaries })
     });
     const data = await this.handleResponse<{ success: boolean; data: any }>(res);
@@ -269,7 +298,7 @@ export class DatabaseApiClient {
   public static async generateAnalysis(method: string, ...args: any[]): Promise<any> {
     const res = await fetch('/api/database/analysis/generate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ method, args })
     });
     const data = await this.handleResponse<{ result: any }>(res);

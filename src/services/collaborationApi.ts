@@ -17,7 +17,7 @@ import {
 } from '../types/collaboration';
 
 export class CollaborationApiClient {
-  private static workspaceId: string = 'ws_primary';
+  private static workspaceId: string = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_workspace_id')) || 'ws_primary';
   private static sessionToken: string | null = null;
 
   public static setWorkspaceId(id: string) {
@@ -191,6 +191,84 @@ export class CollaborationApiClient {
 
   public static async deleteProject(id: string): Promise<any> {
     const res = await fetch(`/api/projects/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders()
+    });
+    return res.json();
+  }
+
+  // ==========================================
+  // SAVED QUERIES
+  // ==========================================
+  public static async listSavedQueries(projectId?: string): Promise<{ success: boolean; queries: any[] }> {
+    const url = projectId ? `/api/queries?projectId=${projectId}` : '/api/queries';
+    const res = await fetch(url, { headers: this.getHeaders() });
+    return res.json();
+  }
+
+  public static async getSavedQuery(id: string): Promise<{ success: boolean; query: any }> {
+    const res = await fetch(`/api/queries/${id}`, { headers: this.getHeaders() });
+    return res.json();
+  }
+
+  public static async saveSavedQuery(queryData: {
+    id?: string;
+    name: string;
+    sql: string;
+    description?: string;
+    tags?: string[];
+    visibility?: string;
+    projectId?: string;
+  }): Promise<{ success: boolean; query: any }> {
+    const res = await fetch('/api/queries', {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(queryData)
+    });
+    return res.json();
+  }
+
+  public static async deleteSavedQuery(id: string): Promise<any> {
+    const res = await fetch(`/api/queries/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders()
+    });
+    return res.json();
+  }
+
+  // ==========================================
+  // PIPELINES
+  // ==========================================
+  public static async listPipelines(projectId?: string): Promise<{ success: boolean; pipelines: any[] }> {
+    const url = projectId ? `/api/pipelines?projectId=${projectId}` : '/api/pipelines';
+    const res = await fetch(url, { headers: this.getHeaders() });
+    return res.json();
+  }
+
+  public static async getPipeline(id: string): Promise<{ success: boolean; pipeline: any }> {
+    const res = await fetch(`/api/pipelines/${id}`, { headers: this.getHeaders() });
+    return res.json();
+  }
+
+  public static async savePipeline(pipelineData: {
+    id?: string;
+    name: string;
+    description?: string;
+    steps: any[];
+    datasetId?: string;
+    visibility?: string;
+    projectId?: string;
+  }): Promise<{ success: boolean; pipeline: any }> {
+    const res = await fetch('/api/pipelines', {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(pipelineData)
+    });
+    return res.json();
+  }
+
+  public static async deletePipeline(id: string): Promise<any> {
+    const res = await fetch(`/api/pipelines/${id}`, {
       method: 'DELETE',
       headers: this.getHeaders()
     });

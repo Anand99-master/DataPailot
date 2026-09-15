@@ -38,7 +38,7 @@ import { ImportedDataset } from './types/import';
 import { ImportApiClient } from './services/importApi';
 import { DataImportModal } from './components/Import/DataImportModal';
 import { DatasetDetailModal } from './components/Import/DatasetDetailModal';
-import { CollaborationProvider } from './context/CollaborationContext';
+import { CollaborationProvider, useCollaboration } from './context/CollaborationContext';
 import { AuthModal } from './components/Collaboration/AuthModal';
 import { AdminConsoleModal } from './components/Collaboration/AdminConsoleModal';
 import { ActivityFeedDrawer } from './components/Collaboration/ActivityFeedDrawer';
@@ -46,6 +46,8 @@ import { GlobalSearchModal } from './components/Collaboration/GlobalSearchModal'
 import { ReportsWorkspace } from './components/Collaboration/ReportsWorkspace';
 
 function AppContent() {
+  const { activeWorkspace } = useCollaboration();
+
   // Connection state
   const [connection, setConnection] = useState<SanitizedConnectionInfo | null>(null);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
@@ -472,7 +474,7 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
     }
   };
 
-  // Check initial connection status on load
+  // Check connection status and load workspace datasets on mount or workspace change
   useEffect(() => {
     let isMounted = true;
     loadImportedDatasets();
@@ -495,7 +497,7 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [activeWorkspace?.id]);
 
   const loadTables = async () => {
     try {

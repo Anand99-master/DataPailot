@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getSessionId } from './connectionRoutes';
+import { getSessionDatasetStoreKey } from '../utils/workspaceHelper';
 import { ApiResponse } from '../utils/apiResponse';
 import { Logger } from '../utils/logger';
 import { DataCleaningService } from '../services/DataCleaningService';
@@ -14,7 +15,7 @@ export const cleaningRoutes = Router();
  */
 cleaningRoutes.post('/ai/analyze', async (req: Request, res: Response) => {
   try {
-    const sessionId = getSessionId(req, res);
+    const storeKey = getSessionDatasetStoreKey(req, res);
     const { datasetId, steps } = req.body;
 
     if (!datasetId) {
@@ -23,7 +24,7 @@ cleaningRoutes.post('/ai/analyze', async (req: Request, res: Response) => {
     }
 
     const plan = await AiCleaningService.analyzeDataset(
-      sessionId,
+      storeKey,
       datasetId,
       Array.isArray(steps) ? steps : []
     );
@@ -44,7 +45,7 @@ cleaningRoutes.post('/ai/analyze', async (req: Request, res: Response) => {
  */
 cleaningRoutes.post('/ai/reanalyze', async (req: Request, res: Response) => {
   try {
-    const sessionId = getSessionId(req, res);
+    const storeKey = getSessionDatasetStoreKey(req, res);
     const { datasetId, steps } = req.body;
 
     if (!datasetId) {
@@ -53,7 +54,7 @@ cleaningRoutes.post('/ai/reanalyze', async (req: Request, res: Response) => {
     }
 
     const result = await AiCleaningService.reanalyzeDataset(
-      sessionId,
+      storeKey,
       datasetId,
       Array.isArray(steps) ? steps : []
     );
@@ -74,7 +75,7 @@ cleaningRoutes.post('/ai/reanalyze', async (req: Request, res: Response) => {
  */
 cleaningRoutes.post('/preview', async (req: Request, res: Response) => {
   try {
-    const sessionId = getSessionId(req, res);
+    const storeKey = getSessionDatasetStoreKey(req, res);
     const { datasetId, steps } = req.body;
 
     if (!datasetId) {
@@ -83,7 +84,7 @@ cleaningRoutes.post('/preview', async (req: Request, res: Response) => {
     }
 
     const preview = await DataCleaningService.previewPipeline(
-      sessionId,
+      storeKey,
       datasetId,
       Array.isArray(steps) ? steps : []
     );
@@ -104,7 +105,7 @@ cleaningRoutes.post('/preview', async (req: Request, res: Response) => {
  */
 cleaningRoutes.post('/save', async (req: Request, res: Response) => {
   try {
-    const sessionId = getSessionId(req, res);
+    const storeKey = getSessionDatasetStoreKey(req, res);
     const { datasetId, newDatasetName, steps, pipelineMetadata } = req.body;
 
     if (!datasetId) {
@@ -113,7 +114,7 @@ cleaningRoutes.post('/save', async (req: Request, res: Response) => {
     }
 
     const result = await DataCleaningService.saveCleanedDataset(
-      sessionId,
+      storeKey,
       datasetId,
       newDatasetName,
       Array.isArray(steps) ? steps : [],
@@ -136,7 +137,7 @@ cleaningRoutes.post('/save', async (req: Request, res: Response) => {
  */
 cleaningRoutes.post('/export', async (req: Request, res: Response) => {
   try {
-    const sessionId = getSessionId(req, res);
+    const storeKey = getSessionDatasetStoreKey(req, res);
     const { datasetId, steps, format, customName } = req.body;
 
     if (!datasetId) {
@@ -151,7 +152,7 @@ cleaningRoutes.post('/export', async (req: Request, res: Response) => {
     }
 
     const exported = await DataCleaningService.exportCleanedData(
-      sessionId,
+      storeKey,
       datasetId,
       Array.isArray(steps) ? steps : [],
       exportFormat,

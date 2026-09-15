@@ -7,6 +7,23 @@ import {
 } from '../types/import';
 
 export class ImportApiClient {
+  private static workspaceId: string = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_workspace_id')) || 'ws_primary';
+
+  public static setWorkspaceId(id: string) {
+    this.workspaceId = id;
+  }
+
+  public static getWorkspaceId(): string {
+    return this.workspaceId;
+  }
+
+  private static getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+    return {
+      'x-workspace-id': this.workspaceId,
+      ...extraHeaders
+    };
+  }
+
   /**
    * Helper to convert a browser File object to Base64 string
    */
@@ -68,7 +85,7 @@ export class ImportApiClient {
 
     const res = await fetch('/api/import/validate-and-preview', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload)
     });
 
@@ -106,7 +123,7 @@ export class ImportApiClient {
 
     const res = await fetch('/api/import/confirm', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         fileName: params.fileName,
         datasetName: params.datasetName,
@@ -129,7 +146,9 @@ export class ImportApiClient {
    * Lists all imported datasets
    */
   public static async getDatasets(): Promise<ImportedDataset[]> {
-    const res = await fetch('/api/import/datasets');
+    const res = await fetch('/api/import/datasets', {
+      headers: this.getHeaders()
+    });
     const data = await res.json();
     if (!res.ok || !data.success) {
       throw new Error(data.error || 'Failed to fetch datasets');
@@ -141,7 +160,9 @@ export class ImportApiClient {
    * Retrieves a single dataset with profile and preview
    */
   public static async getDataset(datasetId: string): Promise<ImportedDataset> {
-    const res = await fetch(`/api/import/datasets/${encodeURIComponent(datasetId)}`);
+    const res = await fetch(`/api/import/datasets/${encodeURIComponent(datasetId)}`, {
+      headers: this.getHeaders()
+    });
     const data = await res.json();
     if (!res.ok || !data.success) {
       throw new Error(data.error || 'Failed to fetch dataset');
@@ -155,7 +176,7 @@ export class ImportApiClient {
   public static async renameDataset(datasetId: string, name: string): Promise<ImportedDataset> {
     const res = await fetch(`/api/import/datasets/${encodeURIComponent(datasetId)}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ name })
     });
 
@@ -171,7 +192,8 @@ export class ImportApiClient {
    */
   public static async removeDataset(datasetId: string): Promise<void> {
     const res = await fetch(`/api/import/datasets/${encodeURIComponent(datasetId)}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      headers: this.getHeaders()
     });
 
     const data = await res.json();
@@ -184,7 +206,9 @@ export class ImportApiClient {
    * Retrieves capability support matrix
    */
   public static async getCapabilities(): Promise<OperationSupportStatus[]> {
-    const res = await fetch('/api/import/capabilities');
+    const res = await fetch('/api/import/capabilities', {
+      headers: this.getHeaders()
+    });
     const data = await res.json();
     if (!res.ok || !data.success) {
       throw new Error(data.error || 'Failed to fetch capabilities');
@@ -198,7 +222,7 @@ export class ImportApiClient {
   public static async exportDataset(datasetId: string, format: ExportFormat): Promise<void> {
     const res = await fetch('/api/import/export', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ datasetId, format })
     });
 

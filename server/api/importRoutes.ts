@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getSessionId } from './connectionRoutes';
+import { getSessionDatasetStoreKey, getEffectiveWorkspaceId } from '../utils/workspaceHelper';
 import { ApiResponse } from '../utils/apiResponse';
 import { Logger } from '../utils/logger';
 import { ImportSecurity } from '../import/ImportSecurity';
@@ -187,14 +188,18 @@ importRoutes.post('/confirm', async (req: Request, res: Response) => {
       columns = parsed.columns;
     }
 
-    const dataset = await unifiedDataLayer.registerDataset(sessionId, {
+    const storeKey = getSessionDatasetStoreKey(req, res);
+    const workspaceId = getEffectiveWorkspaceId(req);
+
+    const dataset = await unifiedDataLayer.registerDataset(storeKey, {
       sourceName: name,
       fileType: effectiveType,
       columns,
       rows: parsedRows,
       fileSize: buffer.length,
       sheets,
-      selectedSheet
+      selectedSheet,
+      workspaceId
     });
 
     res.json({
@@ -213,8 +218,8 @@ importRoutes.post('/confirm', async (req: Request, res: Response) => {
  */
 importRoutes.get('/datasets', (req: Request, res: Response) => {
   try {
-    const sessionId = getSessionId(req, res);
-    const datasets = unifiedDataLayer.getDatasets(sessionId);
+    const storeKey = getSessionDatasetStoreKey(req, res);
+    const datasets = unifiedDataLayer.getDatasets(storeKey);
     res.json({
       success: true,
       datasets,
@@ -232,8 +237,8 @@ importRoutes.get('/datasets', (req: Request, res: Response) => {
  */
 importRoutes.get('/datasets/:id', (req: Request, res: Response) => {
   try {
-    const sessionId = getSessionId(req, res);
-    const dataset = unifiedDataLayer.getDataset(sessionId, req.params.id);
+    const storeKey = getSessionDatasetStoreKey(req, res);
+    const dataset = unifiedDataLayer.getDataset(storeKey, req.params.id);
     if (!dataset) {
       ApiResponse.error(res, 404, 'DATASET_NOT_FOUND', `Dataset '${req.params.id}' not found.`);
       return;
@@ -254,13 +259,13 @@ importRoutes.get('/datasets/:id', (req: Request, res: Response) => {
  */
 importRoutes.patch('/datasets/:id', (req: Request, res: Response) => {
   try {
-    const sessionId = getSessionId(req, res);
+    const storeKey = getSessionDatasetStoreKey(req, res);
     const { name } = req.body;
     if (!name || !name.trim()) {
       ApiResponse.error(res, 400, 'INVALID_NAME', 'New name cannot be empty.');
       return;
     }
-    const updated = unifiedDataLayer.renameDataset(sessionId, req.params.id, name);
+    const updated = unifiedDataLayer.renameDataset(storeKey, req.params.id, name);
     res.json({
       success: true,
       dataset: updated
@@ -277,8 +282,8 @@ importRoutes.patch('/datasets/:id', (req: Request, res: Response) => {
  */
 importRoutes.delete('/datasets/:id', (req: Request, res: Response) => {
   try {
-    const sessionId = getSessionId(req, res);
-    const success = unifiedDataLayer.removeDataset(sessionId, req.params.id);
+    const storeKey = getSessionDatasetStoreKey(req, res);
+    const success = unifiedDataLayer.removeDataset(storeKey, req.params.id);
     if (!success) {
       ApiResponse.error(res, 404, 'DATASET_NOT_FOUND', `Dataset '${req.params.id}' not found.`);
       return;
@@ -299,7 +304,7 @@ importRoutes.delete('/datasets/:id', (req: Request, res: Response) => {
  */
 importRoutes.post('/query', async (req: Request, res: Response) => {
   try {
-    const sessionId = getSessionId(req, res);
+    const storeKey = getSessionDatasetStoreKey(req, res);
     const { sql, maxRows } = req.body;
 
     if (!sql || typeof sql !== 'string') {
@@ -307,7 +312,7 @@ importRoutes.post('/query', async (req: Request, res: Response) => {
       return;
     }
 
-    const result = await unifiedDataLayer.executeQuery(sessionId, sql, { maxRows });
+    const result = await unifiedDataLayer.executeQuery(storeKey, sql, { maxRows });
     res.json({
       success: true,
       result
@@ -324,7 +329,8 @@ importRoutes.post('/query', async (req: Request, res: Response) => {
  */
 importRoutes.get('/capabilities', (req: Request, res: Response) => {
   try {
-    const capabilities = unifiedDataLayer.getCapabilities();
+    const storeKey = getSessionDatasetStoreKey(req, res);
+    const capabilities = unifiedDataLayer.getOperationCapabilities(storeKey);
     res.json({
       success: true,
       capabilities
@@ -341,7 +347,7 @@ importRoutes.get('/capabilities', (req: Request, res: Response) => {
  */
 importRoutes.post('/export', (req: Request, res: Response) => {
   try {
-    const sessionId = getSessionId(req, res);
+    const storeKey = getSessionDatasetStoreKey(req, res);
     const { datasetId, format } = req.body;
 
     if (!datasetId) {
@@ -355,7 +361,7 @@ importRoutes.post('/export', (req: Request, res: Response) => {
       return;
     }
 
-    const exported = unifiedDataLayer.exportDataset(sessionId, datasetId, exportFormat);
+    const exported = unifiedDataLayer.exportDataset(storeKey, datasetId, exportFormat);
 
     res.setHeader('Content-Type', exported.mimeType);
     res.setHeader('Content-Disposition', `attachment; filename="${exported.fileName}"`);

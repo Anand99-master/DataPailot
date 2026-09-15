@@ -1649,6 +1649,136 @@ ORDER BY 1 DESC;`,
   }
 
   // ==========================================
+  // PIPELINES (WORKSPACE AWARE)
+  // ==========================================
+  public listPipelines(workspaceId: string, projectId?: string): any[] {
+    let sql = `
+      SELECT p.id, p.workspace_id as workspaceId, p.project_id as projectId, p.owner_id as ownerId,
+        p.dataset_id as datasetId, p.name, p.description, p.steps_json, p.visibility,
+        p.created_by as createdBy, p.updated_by as updatedBy, p.created_at as createdAt, p.updated_at as updatedAt,
+        u.name as ownerName
+      FROM pipelines_store p
+      LEFT JOIN users u ON p.owner_id = u.id
+      WHERE p.workspace_id = ?
+    `;
+    const params: any[] = [workspaceId];
+    if (projectId) {
+      sql += ' AND p.project_id = ?';
+      params.push(projectId);
+    }
+    sql += ' ORDER BY p.updated_at DESC';
+
+    const rows = this.db.prepare(sql).all(...params) as any[];
+    return rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      description: r.description || '',
+      workspaceId: r.workspaceId,
+      projectId: r.projectId,
+      ownerId: r.ownerId,
+      ownerName: r.ownerName,
+      datasetId: r.datasetId,
+      steps: JSON.parse(r.steps_json || '[]'),
+      visibility: r.visibility || 'WORKSPACE',
+      createdBy: r.createdBy,
+      updatedBy: r.updatedBy,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }));
+  }
+
+  public getPipelineById(id: string): any | null {
+    const r = this.db.prepare(`
+      SELECT p.id, p.workspace_id as workspaceId, p.project_id as projectId, p.owner_id as ownerId,
+        p.dataset_id as datasetId, p.name, p.description, p.steps_json, p.visibility,
+        p.created_by as createdBy, p.updated_by as updatedBy, p.created_at as createdAt, p.updated_at as updatedAt,
+        u.name as ownerName
+      FROM pipelines_store p
+      LEFT JOIN users u ON p.owner_id = u.id
+      WHERE p.id = ?
+    `).get(id) as any;
+
+    if (!r) return null;
+
+    return {
+      id: r.id,
+      name: r.name,
+      description: r.description || '',
+      workspaceId: r.workspaceId,
+      projectId: r.projectId,
+      ownerId: r.ownerId,
+      ownerName: r.ownerName,
+      datasetId: r.datasetId,
+      steps: JSON.parse(r.steps_json || '[]'),
+      visibility: r.visibility || 'WORKSPACE',
+      createdBy: r.createdBy,
+      updatedBy: r.updatedBy,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    };
+  }
+
+  public savePipeline(params: {
+    id?: string;
+    workspaceId: string;
+    projectId?: string;
+    ownerId: string;
+    datasetId?: string;
+    name: string;
+    description?: string;
+    steps: any[];
+    visibility?: ResourceVisibility;
+  }): any {
+    const id = params.id || `pipe_${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`;
+    const now = new Date().toISOString();
+    const existing = this.getPipelineById(id);
+
+    if (existing) {
+      this.db.prepare(`
+        UPDATE pipelines_store
+        SET name = ?, description = ?, steps_json = ?, dataset_id = ?, visibility = ?, updated_by = ?, project_id = ?, updated_at = ?
+        WHERE id = ?
+      `).run(
+        params.name,
+        params.description || '',
+        JSON.stringify(params.steps || []),
+        params.datasetId || existing.datasetId || '',
+        params.visibility || existing.visibility,
+        params.ownerId,
+        params.projectId || existing.projectId || null,
+        now,
+        id
+      );
+      return this.getPipelineById(id);
+    }
+
+    this.db.prepare(`
+      INSERT INTO pipelines_store (id, workspace_id, project_id, owner_id, dataset_id, name, description, steps_json, visibility, created_by, updated_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      params.workspaceId,
+      params.projectId || null,
+      params.ownerId,
+      params.datasetId || '',
+      params.name,
+      params.description || '',
+      JSON.stringify(params.steps || []),
+      params.visibility || 'WORKSPACE',
+      params.ownerId,
+      params.ownerId,
+      now,
+      now
+    );
+
+    return this.getPipelineById(id);
+  }
+
+  public deletePipeline(id: string): void {
+    this.db.prepare('DELETE FROM pipelines_store WHERE id = ?').run(id);
+  }
+
+  // ==========================================
   // GLOBAL WORKSPACE SEARCH
   // ==========================================
   public globalSearch(workspaceId: string, query: string): any[] {

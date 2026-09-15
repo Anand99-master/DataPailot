@@ -5,6 +5,7 @@ import { UnifiedDataLayer } from '../import/UnifiedDataLayer';
 import { SqlDialect } from '../database/SqlDialect';
 import { QuerySafetyValidator } from '../database/QuerySafetyValidator';
 import { getSessionId } from './connectionRoutes';
+import { getSessionDatasetStoreKey } from '../utils/workspaceHelper';
 import { ApiValidation } from '../utils/apiValidation';
 import { ApiResponse } from '../utils/apiResponse';
 import { Logger } from '../utils/logger';
@@ -30,10 +31,11 @@ const sqliteDialect: SqlDialect = {
 queryRoutes.post('/query', async (req: Request, res: Response) => {
   const startTime = Date.now();
   const sessionId = getSessionId(req, res);
+  const storeKey = getSessionDatasetStoreKey(req, res);
 
   try {
     const adapter = connectionManager.getAdapter(sessionId);
-    const importedDatasets = unifiedDataLayer.getDatasets(sessionId);
+    const importedDatasets = unifiedDataLayer.getDatasets(storeKey);
 
     // Step 1: Input Validation
     const sqlValidation = ApiValidation.validateSql(req.body.sql);
@@ -61,7 +63,7 @@ queryRoutes.post('/query', async (req: Request, res: Response) => {
         importedDatasets.some(ds => sqlValidation.cleanSql!.includes(ds.tableName)));
 
     if (isImportedTarget) {
-      const result = await unifiedDataLayer.executeQuery(sessionId, sqlValidation.cleanSql, {
+      const result = await unifiedDataLayer.executeQuery(storeKey, sqlValidation.cleanSql, {
         maxRows,
         timeoutMs
       });
