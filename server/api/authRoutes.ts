@@ -86,6 +86,206 @@ router.post('/register', (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/auth/demo-switch
+ * Instant demo persona switcher for testing RBAC profiles (OWNER/ADMIN, ANALYST, VIEWER)
+ * Changes RBAC role/permissions without corrupting or overwriting custom user profile information.
+ */
+router.post('/demo-switch', (req: Request, res: Response) => {
+  try {
+    const { role: reqRole } = req.body;
+    const store = CollaborationStore.getInstance();
+
+    let targetRole: UserRole = 'OWNER';
+    const normalized = (reqRole || '').toString().toLowerCase().trim();
+    if (normalized === 'analyst') {
+      targetRole = 'ANALYST';
+    } else if (normalized === 'viewer') {
+      targetRole = 'VIEWER';
+    } else if (normalized === 'admin' || normalized === 'owner') {
+      targetRole = 'OWNER';
+    } else if (normalized === 'editor') {
+      targetRole = 'EDITOR';
+    }
+
+    // Preserve the current authenticated user's profile info (name, jobTitle, email) if available,
+    // or fallback to the primary user record
+    let currentUserId = req.authContext?.user?.id || 'usr_admin';
+    let user = store.getUserById(currentUserId) || store.getUserById('usr_admin');
+
+    if (!user) {
+      user = {
+        id: currentUserId,
+        name: 'Alex Rivera',
+        email: 'admin@datapilot.io',
+        jobTitle: 'Lead Data Architect',
+        status: 'active',
+        role: targetRole,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    const wsId = (req.headers['x-workspace-id'] as string) || (req.body.workspaceId as string) || 'ws_primary';
+    const member = store.getWorkspaceMember(wsId, user.id);
+    if (!member) {
+      try {
+        store.addOrInviteMember(wsId, user.id, targetRole);
+      } catch {
+        // ignore if already present
+      }
+    } else {
+      try {
+        store.updateMemberRole(wsId, user.id, targetRole);
+      } catch {
+        // ignore
+      }
+    }
+
+    const session = store.createSession(user.id, req.ip, req.headers['user-agent']);
+
+    res.cookie('datapilot_session', session.token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    const permissions = PermissionService.getPermissionsForRole(targetRole);
+
+    store.logAuditEvent({
+      actorId: user.id,
+      actorName: user.name,
+      workspaceId: wsId,
+      action: 'DEMO_PERSONA_SWITCHED',
+      result: 'SUCCESS',
+      metadata: { role: targetRole, userId: user.id, email: user.email },
+      correlationId: req.correlationId
+    });
+
+    res.json({
+      success: true,
+      user: { ...user, role: targetRole },
+      session,
+      workspaceId: wsId,
+      memberRole: targetRole,
+      permissions
+    });
+  } catch (err: any) {
+    Logger.error('Demo persona switch failed', err);
+    res.status(500).json({ success: false, error: 'Failed to switch demo persona.' });
+  }
+});
+
+/**
+ * PUT /api/auth/profile
+ * Update current authenticated user profile (Full Name, Job Title, Email, Avatar)
+ * RBAC role is strictly protected and cannot be changed here.
+ */
+router.put('/profile', (req: Request, res: Response) => {
+  try {
+    if (!req.authContext || !req.authContext.user) {
+      res.status(401).json({ success: false, error: 'Authentication required to edit profile.' });
+      return;
+    }
+
+    const { name, jobTitle, email, avatar } = req.body;
+    const store = CollaborationStore.getInstance();
+    const currentUser = req.authContext.user;
+
+    // 1. Validation: Name
+    if (name !== undefined) {
+      if (typeof name !== 'string' || !name.trim()) {
+        res.status(400).json({ success: false, error: 'Full name cannot be empty.' });
+        return;
+      }
+      if (name.trim().length > 100) {
+        res.status(400).json({ success: false, error: 'Full name cannot exceed 100 characters.' });
+        return;
+      }
+    }
+
+    // 2. Validation: Job Title
+    if (jobTitle !== undefined && jobTitle !== null) {
+      if (typeof jobTitle !== 'string') {
+        res.status(400).json({ success: false, error: 'Job title must be a valid text string.' });
+        return;
+      }
+      if (jobTitle.trim().length > 100) {
+        res.status(400).json({ success: false, error: 'Job title cannot exceed 100 characters.' });
+        return;
+      }
+    }
+
+    // 3. Validation: Email
+    if (email !== undefined) {
+      if (typeof email !== 'string' || !email.trim()) {
+        res.status(400).json({ success: false, error: 'Email address cannot be empty.' });
+        return;
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        res.status(400).json({ success: false, error: 'Please provide a valid email address.' });
+        return;
+      }
+      if (email.trim().length > 150) {
+        res.status(400).json({ success: false, error: 'Email address cannot exceed 150 characters.' });
+        return;
+      }
+
+      // Check for email conflicts
+      const existing = store.getUserByEmail(email.trim());
+      if (existing && existing.id !== currentUser.id) {
+        res.status(409).json({ success: false, error: 'A user with this email address already exists.' });
+        return;
+      }
+    }
+
+    // 4. Update store
+    const updatedUser = store.updateUserProfile(currentUser.id, {
+      name: name !== undefined ? name.trim() : undefined,
+      jobTitle: jobTitle !== undefined ? (jobTitle ? jobTitle.trim() : '') : undefined,
+      email: email !== undefined ? email.trim().toLowerCase() : undefined,
+      avatar: avatar !== undefined ? avatar : undefined
+    });
+
+    if (!updatedUser) {
+      res.status(404).json({ success: false, error: 'User record not found.' });
+      return;
+    }
+
+    store.logAuditEvent({
+      actorId: currentUser.id,
+      actorName: updatedUser.name,
+      workspaceId: req.authContext.workspaceId || 'ws_primary',
+      action: 'PROFILE_UPDATED',
+      result: 'SUCCESS',
+      metadata: {
+        previousName: currentUser.name,
+        newName: updatedUser.name,
+        jobTitle: updatedUser.jobTitle,
+        email: updatedUser.email
+      },
+      correlationId: req.correlationId
+    });
+
+    // Retain current session RBAC role
+    const responseUser = {
+      ...updatedUser,
+      role: req.authContext.memberRole || req.authContext.user.role || updatedUser.role
+    };
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully.',
+      user: responseUser
+    });
+  } catch (err: any) {
+    Logger.error('Failed to update user profile', err);
+    res.status(500).json({ success: false, error: 'An unexpected error occurred while updating profile.' });
+  }
+});
+
+/**
  * POST /api/auth/login
  * Authenticate user with credentials
  */

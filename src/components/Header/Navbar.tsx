@@ -57,7 +57,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenActivityFeed,
   onOpenSearch
 }) => {
-  const { user } = useCollaboration();
+  const { user, role } = useCollaboration();
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const navContainerRef = useRef<HTMLElement>(null);
@@ -339,10 +339,22 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             {user ? (
               <>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  (role || user.role) === 'OWNER' || (role || user.role) === 'ADMIN'
+                    ? 'bg-purple-400 animate-pulse'
+                    : (role || user.role) === 'ANALYST'
+                    ? 'bg-emerald-400 animate-pulse'
+                    : 'bg-amber-400'
+                }`} />
                 <span className="hidden lg:inline truncate max-w-[100px]">{user.name}</span>
-                <span className="text-[10px] uppercase font-mono px-1 bg-emerald-900/50 text-emerald-300 rounded">
-                  {user.role}
+                <span id="navbar-role-badge" className={`text-[10px] uppercase font-mono px-1 rounded ${
+                  (role || user.role) === 'OWNER' || (role || user.role) === 'ADMIN'
+                    ? 'bg-purple-900/50 text-purple-300 border border-purple-700/40'
+                    : (role || user.role) === 'ANALYST'
+                    ? 'bg-emerald-900/50 text-emerald-300 border border-emerald-700/40'
+                    : 'bg-amber-900/50 text-amber-300 border border-amber-700/40'
+                }`}>
+                  {role || user.role}
                 </span>
               </>
             ) : (

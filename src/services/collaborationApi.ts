@@ -19,10 +19,14 @@ import {
 export class CollaborationApiClient {
   private static workspaceId: string = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_workspace_id')) || 'ws_primary';
   private static projectId: string | null = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_project_id')) || null;
-  private static sessionToken: string | null = null;
+  private static sessionToken: string | null = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_session_token')) || null;
+  private static demoRole: string | null = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('datapilot_demo_role')) || (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_demo_role')) || null;
 
   public static setWorkspaceId(id: string) {
     this.workspaceId = id;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('datapilot_active_workspace_id', id);
+    }
   }
 
   public static getWorkspaceId(): string {
@@ -31,6 +35,13 @@ export class CollaborationApiClient {
 
   public static setProjectId(id: string | null) {
     this.projectId = id && id.trim() && id !== 'null' && id !== 'undefined' ? id.trim() : null;
+    if (typeof localStorage !== 'undefined') {
+      if (this.projectId) {
+        localStorage.setItem('datapilot_active_project_id', this.projectId);
+      } else {
+        localStorage.removeItem('datapilot_active_project_id');
+      }
+    }
   }
 
   public static getProjectId(): string | null {
@@ -39,6 +50,39 @@ export class CollaborationApiClient {
 
   public static setSessionToken(token: string | null) {
     this.sessionToken = token;
+    if (typeof localStorage !== 'undefined') {
+      if (token) {
+        localStorage.setItem('datapilot_session_token', token);
+      } else {
+        localStorage.removeItem('datapilot_session_token');
+      }
+    }
+  }
+
+  public static getSessionToken(): string | null {
+    return this.sessionToken;
+  }
+
+  public static setDemoRole(role: string | null) {
+    this.demoRole = role;
+    if (typeof sessionStorage !== 'undefined') {
+      if (role) {
+        sessionStorage.setItem('datapilot_demo_role', role);
+      } else {
+        sessionStorage.removeItem('datapilot_demo_role');
+      }
+    }
+    if (typeof localStorage !== 'undefined') {
+      if (role) {
+        localStorage.setItem('datapilot_demo_role', role);
+      } else {
+        localStorage.removeItem('datapilot_demo_role');
+      }
+    }
+  }
+
+  public static getDemoRole(): string | null {
+    return this.demoRole;
   }
 
   private static getHeaders(): Record<string, string> {
@@ -51,6 +95,10 @@ export class CollaborationApiClient {
     }
     if (this.sessionToken) {
       headers['Authorization'] = `Bearer ${this.sessionToken}`;
+      headers['x-session-token'] = this.sessionToken;
+    }
+    if (this.demoRole) {
+      headers['x-demo-role'] = this.demoRole;
     }
     return headers;
   }
@@ -70,30 +118,88 @@ export class CollaborationApiClient {
     }
   }
 
+  public static async demoSwitch(role: string): Promise<any> {
+    try {
+      const res = await fetch('/api/auth/demo-switch', {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ role, workspaceId: this.workspaceId })
+      });
+      const data = await res.json();
+      if (data.success && data.session?.token) {
+        this.setSessionToken(data.session.token);
+        this.setDemoRole(data.memberRole || role);
+      }
+      return data;
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
   public static async login(email: string, password: string): Promise<any> {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    return res.json();
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (data.success && data.session?.token) {
+        this.setSessionToken(data.session.token);
+        this.setDemoRole(data.memberRole || data.user?.role || 'ANALYST');
+      }
+      return data;
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
   }
 
   public static async register(name: string, email: string, password: string, role?: UserRole): Promise<any> {
-    const res = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password, role })
-    });
-    return res.json();
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ name, email, password, role })
+      });
+      const data = await res.json();
+      if (data.success && data.session?.token) {
+        this.setSessionToken(data.session.token);
+        this.setDemoRole(data.memberRole || role || 'ANALYST');
+      }
+      return data;
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  public static async updateProfile(profile: { name: string; jobTitle?: string; email?: string; avatar?: string }): Promise<any> {
+    try {
+      const res = await fetch('/api/auth/profile', {
+        method: 'PUT',
+        headers: this.getHeaders(),
+        body: JSON.stringify(profile)
+      });
+      const data = await res.json();
+      return data;
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to update profile' };
+    }
   }
 
   public static async logout(): Promise<any> {
-    const res = await fetch('/api/auth/logout', {
-      method: 'POST',
-      headers: this.getHeaders()
-    });
-    return res.json();
+    try {
+      const res = await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: this.getHeaders()
+      });
+      this.setSessionToken(null);
+      this.setDemoRole(null);
+      return res.json();
+    } catch (err: any) {
+      this.setSessionToken(null);
+      this.setDemoRole(null);
+      return { success: true };
+    }
   }
 
   public static async changePassword(newPassword: string, oldPassword?: string): Promise<any> {
@@ -101,15 +207,6 @@ export class CollaborationApiClient {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({ newPassword, oldPassword })
-    });
-    return res.json();
-  }
-
-  public static async updateProfile(name: string, avatar?: string): Promise<any> {
-    const res = await fetch('/api/users/profile', {
-      method: 'PUT',
-      headers: this.getHeaders(),
-      body: JSON.stringify({ name, avatar })
     });
     return res.json();
   }

@@ -1054,6 +1054,7 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
               <VisualizationWorkspace
                 queryResult={queryResult}
                 isConnected={Boolean(connection?.isConnected)}
+                connection={connection}
                 onOpenConnectModal={() => setIsConnectModalOpen(true)}
                 isAiConfigured={true}
                 onAddToDashboard={handleAddToDashboardFromVis}

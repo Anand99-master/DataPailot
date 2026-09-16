@@ -69,6 +69,7 @@ interface CollaborationContextType {
   refreshActivities: () => Promise<void>;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (name: string, email: string, password: string, role?: UserRole) => Promise<{ success: boolean; error?: string }>;
+  updateProfile: (profile: { name: string; jobTitle?: string; email?: string; avatar?: string }) => Promise<{ success: boolean; error?: string; user?: User }>;
   logout: () => Promise<void>;
   switchDemoUser: (role: 'admin' | 'analyst' | 'viewer') => Promise<void>;
 }
@@ -96,13 +97,13 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       if (res.success && (res as any).user) {
         const authData: any = res;
         setUser(authData.user);
-        setRole(authData.memberRole || 'ANALYST');
+        setRole(authData.memberRole || authData.user?.role || 'OWNER');
         setPermissions(authData.permissions || []);
 
         const wsRes = await CollaborationApiClient.listWorkspaces();
         if (wsRes.success && wsRes.workspaces) {
           setWorkspaces(wsRes.workspaces);
-          const currentWs = wsRes.workspaces.find(w => w.id === authData.workspaceId) || wsRes.workspaces[0];
+          const currentWs = wsRes.workspaces.find((w: any) => w.id === authData.workspaceId) || wsRes.workspaces[0];
           if (currentWs) {
             setActiveWorkspace(currentWs);
             syncAllWorkspaceClients(currentWs.id);
@@ -227,8 +228,8 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     const res = await CollaborationApiClient.login(email, password);
     if (res.success) {
       setUser(res.user);
-      setRole(res.memberRole);
-      setPermissions(res.permissions);
+      setRole(res.memberRole || res.user?.role || 'ANALYST');
+      setPermissions(res.permissions || []);
       await initAuth();
       return { success: true };
     }
@@ -239,8 +240,8 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     const res = await CollaborationApiClient.register(name, email, password, regRole);
     if (res.success) {
       setUser(res.user);
-      setRole(res.memberRole);
-      setPermissions(res.permissions);
+      setRole(res.memberRole || regRole || 'ANALYST');
+      setPermissions(res.permissions || []);
       await initAuth();
       return { success: true };
     }
@@ -249,19 +250,114 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const logout = async () => {
     await CollaborationApiClient.logout();
+    setUser(null);
+    setRole('VIEWER');
+    setPermissions([]);
     await initAuth();
   };
 
+  const updateProfile = async (profileData: { name: string; jobTitle?: string; email?: string; avatar?: string }): Promise<{ success: boolean; error?: string; user?: User }> => {
+    try {
+      const res = await CollaborationApiClient.updateProfile(profileData);
+      if (res && res.success && res.user) {
+        setUser(prev => ({
+          ...res.user,
+          role: role || res.user.role
+        }));
+        await refreshWorkspaces();
+        await refreshActivities();
+        return { success: true, user: res.user };
+      }
+      return { success: false, error: res.error || 'Failed to update profile' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to update profile' };
+    }
+  };
+
   // Demo user fast-switcher for testing roles and collaboration flows
-  const switchDemoUser = async (demoRole: 'admin' | 'analyst' | 'viewer') => {
-    const demoCredentials = {
-      admin: { email: 'admin@datapilot.local', pass: 'Admin123!' },
-      analyst: { email: 'analyst@datapilot.local', pass: 'Analyst123!' },
-      viewer: { email: 'viewer@datapilot.local', pass: 'Viewer123!' }
-    };
-    const cred = demoCredentials[demoRole];
-    if (cred) {
-      await login(cred.email, cred.pass);
+  const switchDemoUser = async (demoRole: 'admin' | 'analyst' | 'viewer' | string) => {
+    try {
+      setIsLoadingAuth(true);
+      const normalizedRole: UserRole = demoRole.toLowerCase() === 'analyst' ? 'ANALYST' : demoRole.toLowerCase() === 'viewer' ? 'VIEWER' : 'OWNER';
+      CollaborationApiClient.setDemoRole(normalizedRole);
+
+      const res = await CollaborationApiClient.demoSwitch(demoRole);
+      if (res && res.success) {
+        setUser(res.user);
+        setRole(res.memberRole || normalizedRole);
+        setPermissions(res.permissions || []);
+        if (res.session?.token) {
+          CollaborationApiClient.setSessionToken(res.session.token);
+        }
+      } else {
+        const fallbackUsers: Record<string, User> = {
+          OWNER: {
+            id: 'usr_admin',
+            name: user?.name || 'Alex Rivera',
+            email: user?.email || 'admin@datapilot.io',
+            jobTitle: user?.jobTitle || 'Lead Data Architect',
+            status: 'active',
+            role: 'OWNER',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          },
+          ANALYST: {
+            id: 'usr_analyst',
+            name: user?.name || 'Sarah Chen',
+            email: user?.email || 'analyst@datapilot.io',
+            jobTitle: user?.jobTitle || 'Senior Analyst',
+            status: 'active',
+            role: 'ANALYST',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          },
+          VIEWER: {
+            id: 'usr_viewer',
+            name: user?.name || 'Marcus Brody',
+            email: user?.email || 'viewer@datapilot.io',
+            jobTitle: user?.jobTitle || 'Stakeholder',
+            status: 'active',
+            role: 'VIEWER',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }
+        };
+        const fallbackPermissions: Record<string, Permission[]> = {
+          OWNER: [
+            'workspace.read', 'workspace.update', 'workspace.delete', 'member.read', 'member.invite', 'member.update', 'member.remove',
+            'dataset.read', 'dataset.create', 'dataset.update', 'dataset.delete',
+            'query.read', 'query.create', 'query.update', 'query.delete',
+            'pipeline.read', 'pipeline.create', 'pipeline.update', 'pipeline.delete',
+            'visualization.read', 'visualization.create', 'visualization.update', 'visualization.delete',
+            'dashboard.read', 'dashboard.create', 'dashboard.update', 'dashboard.delete',
+            'report.read', 'report.create', 'report.export', 'audit.read'
+          ],
+          ANALYST: [
+            'workspace.read', 'member.read',
+            'dataset.read', 'dataset.create', 'dataset.update',
+            'query.read', 'query.create', 'query.update', 'query.delete',
+            'pipeline.read', 'pipeline.create', 'pipeline.update', 'pipeline.delete',
+            'visualization.read', 'visualization.create', 'visualization.update', 'visualization.delete',
+            'dashboard.read', 'dashboard.create', 'dashboard.update', 'dashboard.delete',
+            'report.read', 'report.create', 'report.export'
+          ],
+          VIEWER: [
+            'workspace.read', 'member.read',
+            'dataset.read', 'query.read', 'pipeline.read', 'visualization.read', 'dashboard.read',
+            'report.read', 'report.export'
+          ]
+        };
+        setUser(fallbackUsers[normalizedRole] || fallbackUsers.OWNER);
+        setRole(normalizedRole);
+        setPermissions(fallbackPermissions[normalizedRole] || fallbackPermissions.VIEWER);
+      }
+      await refreshProjects();
+      await refreshNotifications();
+      await refreshActivities();
+    } catch (err) {
+      console.error('Failed to switch demo persona', err);
+    } finally {
+      setIsLoadingAuth(false);
     }
   };
 
@@ -289,6 +385,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     refreshActivities,
     login,
     register,
+    updateProfile,
     logout,
     switchDemoUser
   }), [

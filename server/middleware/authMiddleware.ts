@@ -75,6 +75,44 @@ export function authMiddleware(req: Request, _res: Response, next: NextFunction)
     }
   }
 
+  // Fallback demo role header or development fallback context when no valid token provided
+  const demoRoleHeader = req.headers['x-demo-role'] as string | undefined;
+  if (demoRoleHeader) {
+    let demoUserId = 'usr_admin';
+    let targetRole: UserRole = 'OWNER';
+    const norm = demoRoleHeader.toLowerCase().trim();
+    if (norm === 'analyst') {
+      demoUserId = 'usr_analyst';
+      targetRole = 'ANALYST';
+    } else if (norm === 'viewer') {
+      demoUserId = 'usr_viewer';
+      targetRole = 'VIEWER';
+    } else if (norm === 'admin' || norm === 'owner') {
+      demoUserId = 'usr_admin';
+      targetRole = 'OWNER';
+    }
+
+    const demoUser = store.getUserById(demoUserId) || store.getUserById('usr_admin');
+    if (demoUser) {
+      req.authContext = {
+        user: { ...demoUser, role: targetRole },
+        session: {
+          id: `ses_demo_${norm}`,
+          userId: demoUser.id,
+          token: `dev_token_${norm}`,
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+          createdAt: new Date().toISOString(),
+          lastAccessedAt: new Date().toISOString()
+        },
+        workspaceId: headerWsId || 'ws_primary',
+        projectId: headerProjId || null,
+        memberRole: targetRole,
+        permissions: PermissionService.getPermissionsForRole(targetRole)
+      };
+      return next();
+    }
+  }
+
   // Development fallback context when no token provided
   // Ensures existing single-user workflows and tests continue seamlessly while remaining isolated
   const defaultAdmin = store.getUserById('usr_admin');

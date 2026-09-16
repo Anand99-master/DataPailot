@@ -154,6 +154,47 @@ export async function runPhase16_3Tests() {
       passed: searchRes.some(item => item.id === testReport.id)
     });
 
+    // 10. User Profile Editing & Persistence
+    const testProfileUser = store.createUser({
+      name: 'Initial Name',
+      email: 'initial.user@datapilot.local',
+      password: 'InitialPassword123!',
+      jobTitle: 'Junior Analyst',
+      role: 'ANALYST'
+    });
+
+    const updatedUser = store.updateUserProfile(testProfileUser.id, {
+      name: 'Anand Sharma',
+      jobTitle: 'Data Analyst',
+      email: 'anand.sharma@datapilot.local'
+    });
+
+    const retrievedUser = store.getUserById(testProfileUser.id);
+    results.push({
+      name: '10. User profile editing and persistence in store',
+      passed: Boolean(
+        updatedUser &&
+        retrievedUser &&
+        retrievedUser.name === 'Anand Sharma' &&
+        retrievedUser.jobTitle === 'Data Analyst' &&
+        retrievedUser.email === 'anand.sharma@datapilot.local'
+      )
+    });
+
+    // 11. Profile Update Email Uniqueness Guard
+    let emailConflictBlocked = false;
+    try {
+      store.updateUserProfile(testProfileUser.id, {
+        email: 'admin@datapilot.io' // already belongs to admin
+      });
+    } catch {
+      emailConflictBlocked = true;
+    }
+    results.push({
+      name: '11. Profile update email duplicate collision prevention',
+      passed: emailConflictBlocked
+    });
+
   } catch (err: any) {
     results.push({
       name: 'Phase 16.3 Test Suite Execution',

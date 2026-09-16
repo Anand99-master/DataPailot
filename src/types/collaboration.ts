@@ -11,6 +11,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  jobTitle?: string;
   avatar?: string;
   status: UserStatus;
   role?: UserRole;

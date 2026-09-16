@@ -18,9 +18,16 @@ import {
   Code,
   ChevronDown,
   ChevronUp,
-  Loader2
+  Loader2,
+  DatabaseZap,
+  HelpCircle
 } from 'lucide-react';
-import { QueryResult, DiscoveredTable, TableDetailsResult } from '../../types/database';
+import {
+  QueryResult,
+  DiscoveredTable,
+  TableDetailsResult,
+  SanitizedConnectionInfo
+} from '../../types/database';
 import {
   ChartConfig,
   ChartType,
@@ -55,6 +62,7 @@ import { TableView } from './charts/TableView';
 export interface VisualizationWorkspaceProps {
   queryResult: QueryResult | null;
   isConnected: boolean;
+  connection?: SanitizedConnectionInfo | null;
   onOpenConnectModal?: () => void;
   isAiConfigured?: boolean;
   onAddToDashboard?: (config: ChartConfig, result: QueryResult, sourceTable?: string, datasetId?: string) => void;
@@ -64,6 +72,8 @@ export interface VisualizationWorkspaceProps {
   activeDataset?: ImportedDataset | null;
   onSelectDataset?: (dataset: ImportedDataset) => void;
   onOpenImportModal?: () => void;
+
+  // Database Tables support
   selectedTable?: TableDetailsResult | null;
   tables?: DiscoveredTable[];
   onSelectTable?: (table: DiscoveredTable) => void;
@@ -74,6 +84,7 @@ const LOCAL_STORAGE_SAVED_CHARTS_KEY = 'datapilot_saved_visualizations';
 export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
   queryResult,
   isConnected,
+  connection = null,
   onOpenConnectModal,
   isAiConfigured = false,
   onAddToDashboard,
@@ -91,11 +102,56 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
   const [activeViewMode, setActiveViewMode] = useState<'chart' | 'table'>('chart');
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Dataset & Data Source mode selection
-  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
-  const [dataSourceMode, setDataSourceMode] = useState<'imported' | 'database'>('imported');
+  // Filter tables by schema (non-imported are real database tables)
+  const databaseTables = useMemo(() => {
+    return tables.filter(t => t.schema !== 'imported');
+  }, [tables]);
 
-  // Query Execution State for Imported Datasets & Direct Tables
+  // Determine available data sources
+  const hasDbConnection = Boolean(isConnected || databaseTables.length > 0);
+  const hasImportedData = Boolean(importedDatasets && importedDatasets.length > 0);
+  const hasQueryResult = Boolean(queryResult && queryResult.rows && queryResult.rows.length > 0);
+
+  // Active data source mode: 'database' | 'imported' | 'query_result'
+  const [dataSourceMode, setDataSourceMode] = useState<'database' | 'imported' | 'query_result'>(() => {
+    if (selectedTable?.schema === 'imported' || (!hasDbConnection && hasImportedData)) {
+      return 'imported';
+    }
+    if (hasDbConnection) {
+      return 'database';
+    }
+    if (hasQueryResult) {
+      return 'query_result';
+    }
+    return 'imported';
+  });
+
+  // Selected Database Table key: "schema.tableName"
+  const [selectedDbTableKey, setSelectedDbTableKey] = useState<string>(() => {
+    if (selectedTable && selectedTable.schema !== 'imported') {
+      return `${selectedTable.schema}.${selectedTable.name}`;
+    }
+    if (databaseTables.length > 0) {
+      return `${databaseTables[0].schema}.${databaseTables[0].name}`;
+    }
+    return '';
+  });
+
+  // Selected Imported Dataset ID
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(() => {
+    if (activeDataset) return activeDataset.datasetId;
+    if (selectedTable?.schema === 'imported') {
+      const match = importedDatasets.find(d => d.tableName === selectedTable.name);
+      if (match) return match.datasetId;
+    }
+    return importedDatasets.length > 0 ? importedDatasets[0].datasetId : null;
+  });
+
+  // Table Details cache for active database table
+  const [cachedTableDetails, setCachedTableDetails] = useState<Record<string, TableDetailsResult>>({});
+  const [isLoadingTableDetails, setIsLoadingTableDetails] = useState(false);
+
+  // Query Execution State for Imported Datasets & Direct Database Tables
   const [internalQueryResult, setInternalQueryResult] = useState<QueryResult | null>(null);
   const [isQueryLoading, setIsQueryLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
@@ -124,7 +180,39 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isAiRecommending, setIsAiRecommending] = useState(false);
 
-  // 1. Resolve Active Dataset
+  // 1. Chart Configuration State
+  const [config, setConfig] = useState<ChartConfig>(() => ({
+    chartType: 'bar',
+    xAxis: '',
+    yAxis: '',
+    secondaryMeasures: [],
+    aggregation: 'count',
+    sortOrder: 'desc',
+    sortBy: 'y',
+    limit: 50,
+    title: 'Data Visualization',
+    subtitle: '',
+    showLegend: true,
+    showDataLabels: false,
+    showGrid: true,
+    binCount: 20,
+    treatNullAsZero: false,
+    samplingEnabled: false
+  }));
+
+  // Resolve Dialect
+  const activeDialect = useMemo<'postgres' | 'mysql' | 'sqlite' | 'mssql' | 'oracle'>(() => {
+    if (dataSourceMode === 'imported') return 'sqlite';
+    const connType = (connection?.type || '').toLowerCase();
+    if (connType.includes('postgres')) return 'postgres';
+    if (connType.includes('mysql')) return 'mysql';
+    if (connType.includes('sqlite')) return 'sqlite';
+    if (connType.includes('sqlserver') || connType.includes('mssql')) return 'mssql';
+    if (connType.includes('oracle')) return 'oracle';
+    return 'postgres';
+  }, [connection?.type, dataSourceMode]);
+
+  // Resolve Active Dataset
   const currentDataset = useMemo<ImportedDataset | null>(() => {
     if (selectedDatasetId) {
       const found = importedDatasets.find(d => d.datasetId === selectedDatasetId);
@@ -138,21 +226,86 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
     return importedDatasets.length > 0 ? importedDatasets[0] : null;
   }, [importedDatasets, activeDataset, selectedDatasetId, selectedTable]);
 
-  // Synchronize dataSourceMode based on available sources
+  // Resolve Active Database Table object
+  const currentDbTable = useMemo<DiscoveredTable | null>(() => {
+    if (!selectedDbTableKey) {
+      return databaseTables.length > 0 ? databaseTables[0] : null;
+    }
+    const [schema, name] = selectedDbTableKey.split('.');
+    return databaseTables.find(t => t.schema === schema && t.name === name) || databaseTables[0] || null;
+  }, [databaseTables, selectedDbTableKey]);
+
+  // Fetch / Resolve current database table details
   useEffect(() => {
-    if (currentDataset && !isConnected) {
-      setDataSourceMode('imported');
-    } else if (isConnected && !currentDataset) {
-      setDataSourceMode('database');
-    } else if (currentDataset && isConnected) {
-      // If selected table is imported, prioritize imported
-      if (selectedTable?.schema === 'imported') {
-        setDataSourceMode('imported');
+    if (dataSourceMode !== 'database' || !currentDbTable) return;
+    const key = `${currentDbTable.schema}.${currentDbTable.name}`;
+
+    if (selectedTable && selectedTable.schema === currentDbTable.schema && selectedTable.name === currentDbTable.name) {
+      setCachedTableDetails(prev => ({ ...prev, [key]: selectedTable }));
+      return;
+    }
+
+    if (cachedTableDetails[key]) {
+      return;
+    }
+
+    let isCancelled = false;
+    setIsLoadingTableDetails(true);
+
+    DatabaseApiClient.getTableDetails(currentDbTable.schema, currentDbTable.name)
+      .then(details => {
+        if (!isCancelled && details) {
+          setCachedTableDetails(prev => ({ ...prev, [key]: details }));
+        }
+      })
+      .catch(err => {
+        console.error('Failed to load table details for visualization:', err);
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsLoadingTableDetails(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [dataSourceMode, currentDbTable, selectedTable]);
+
+  // Sync selectedTable prop changes from parent
+  useEffect(() => {
+    if (selectedTable) {
+      if (selectedTable.schema === 'imported') {
+        const ds = importedDatasets.find(d => d.tableName === selectedTable.name);
+        if (ds) {
+          setSelectedDatasetId(ds.datasetId);
+          setDataSourceMode('imported');
+        }
+      } else {
+        const key = `${selectedTable.schema}.${selectedTable.name}`;
+        setSelectedDbTableKey(key);
+        setDataSourceMode('database');
       }
     }
-  }, [currentDataset, isConnected, selectedTable]);
+  }, [selectedTable, importedDatasets]);
 
-  // Map dataset columns to DetectedColumn[] format
+  // Auto-switch mode if active mode has no data
+  useEffect(() => {
+    if (dataSourceMode === 'database' && !hasDbConnection && hasImportedData) {
+      setDataSourceMode('imported');
+    } else if (dataSourceMode === 'imported' && !hasImportedData && hasDbConnection) {
+      setDataSourceMode('database');
+    }
+  }, [dataSourceMode, hasDbConnection, hasImportedData]);
+
+  // Resolve active table details
+  const activeDbTableDetails = useMemo<TableDetailsResult | null>(() => {
+    if (!currentDbTable) return null;
+    const key = `${currentDbTable.schema}.${currentDbTable.name}`;
+    return cachedTableDetails[key] || (selectedTable?.name === currentDbTable.name ? selectedTable : null);
+  }, [currentDbTable, cachedTableDetails, selectedTable]);
+
+  // Map columns to DetectedColumn[] format
   const datasetColumns = useMemo<DetectedColumn[]>(() => {
     if (!currentDataset) return [];
     return currentDataset.columns.map(c => {
@@ -175,81 +328,116 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
     });
   }, [currentDataset]);
 
-  // Determine which QueryResult is active
+  const databaseTableColumns = useMemo<DetectedColumn[]>(() => {
+    if (!activeDbTableDetails || !activeDbTableDetails.columns) return [];
+    return ColumnTypeDetector.fromTableColumns(activeDbTableDetails.columns);
+  }, [activeDbTableDetails]);
+
+  // Determine effective QueryResult
   const effectiveQueryResult = useMemo<QueryResult | null>(() => {
-    if (dataSourceMode === 'imported') {
-      return internalQueryResult;
+    if (dataSourceMode === 'query_result') {
+      return queryResult || internalQueryResult;
     }
-    return queryResult || internalQueryResult;
+    return internalQueryResult || (dataSourceMode === 'database' ? queryResult : null);
   }, [dataSourceMode, internalQueryResult, queryResult]);
 
-  // Detect column metadata from query result or fallback to dataset schema
+  // Detect column metadata from query result or fallback to schema
   const detectedColumns = useMemo<DetectedColumn[]>(() => {
     if (effectiveQueryResult && effectiveQueryResult.columns && effectiveQueryResult.rows && effectiveQueryResult.rows.length > 0) {
       return ColumnTypeDetector.detect(effectiveQueryResult.columns, effectiveQueryResult.rows);
+    }
+    if (dataSourceMode === 'database' && databaseTableColumns.length > 0) {
+      return databaseTableColumns;
     }
     if (dataSourceMode === 'imported' && datasetColumns.length > 0) {
       return datasetColumns;
     }
     return [];
-  }, [effectiveQueryResult, dataSourceMode, datasetColumns]);
+  }, [effectiveQueryResult, dataSourceMode, databaseTableColumns, datasetColumns]);
 
-  // 2. Chart Configuration State
-  const [config, setConfig] = useState<ChartConfig>(() => ({
-    chartType: 'bar',
-    xAxis: '',
-    yAxis: '',
-    secondaryMeasures: [],
-    aggregation: 'count',
-    sortOrder: 'desc',
-    sortBy: 'y',
-    limit: 50,
-    title: 'Data Visualization',
-    subtitle: '',
-    showLegend: true,
-    showDataLabels: false,
-    showGrid: true,
-    binCount: 20,
-    treatNullAsZero: false,
-    samplingEnabled: false
-  }));
+  const activeSchemaColumns = useMemo(() => {
+    if (dataSourceMode === 'database') {
+      return detectedColumns.length > 0 ? detectedColumns : databaseTableColumns;
+    }
+    if (dataSourceMode === 'imported') {
+      return detectedColumns.length > 0 ? detectedColumns : datasetColumns;
+    }
+    return detectedColumns;
+  }, [dataSourceMode, detectedColumns, databaseTableColumns, datasetColumns]);
 
-  // Execution engine: queries SQLite in memory for imported datasets
+  // Execution engine: Runs dialect-aware analytical SQL query
   const executeAnalyticalQuery = useCallback(async (
-    targetDataset: ImportedDataset,
+    targetMode: 'database' | 'imported',
     targetConfig: ChartConfig,
-    measureCol?: string
+    measureCol?: string,
+    tableOverride?: { schema: string; name: string }
   ) => {
     setIsQueryLoading(true);
     setQueryError(null);
-    try {
-      const dim = targetConfig.xAxis;
-      const meas = measureCol !== undefined ? measureCol : (rawSelectedMeasure || targetConfig.yAxis);
-      const agg = targetConfig.aggregation || 'count';
 
-      const sql = VisualizationQueryBuilder.buildQuery({
-        tableName: targetDataset.tableName,
-        dimension: dim,
-        measure: meas,
-        aggregation: agg,
-        chartType: targetConfig.chartType,
-        sortOrder: targetConfig.sortOrder,
-        limit: targetConfig.limit,
-        dialect: 'sqlite'
-      });
+    const dim = targetConfig.xAxis;
+    const meas = measureCol !== undefined ? measureCol : (rawSelectedMeasure || targetConfig.yAxis);
+    const agg = targetConfig.aggregation || 'count';
+
+    try {
+      let sql = '';
+      let sourceName = '';
+
+      if (targetMode === 'database') {
+        const table = tableOverride || (currentDbTable ? { schema: currentDbTable.schema, name: currentDbTable.name } : null);
+        if (!table) {
+          setIsQueryLoading(false);
+          return;
+        }
+
+        sourceName = table.name;
+        sql = VisualizationQueryBuilder.buildQuery({
+          schema: table.schema,
+          tableName: table.name,
+          dimension: dim,
+          measure: meas,
+          aggregation: agg,
+          chartType: targetConfig.chartType,
+          sortOrder: targetConfig.sortOrder,
+          limit: targetConfig.limit,
+          dialect: activeDialect
+        });
+      } else {
+        if (!currentDataset) {
+          setIsQueryLoading(false);
+          return;
+        }
+
+        sourceName = currentDataset.name;
+        sql = VisualizationQueryBuilder.buildQuery({
+          tableName: currentDataset.tableName,
+          dimension: dim,
+          measure: meas,
+          aggregation: agg,
+          chartType: targetConfig.chartType,
+          sortOrder: targetConfig.sortOrder,
+          limit: targetConfig.limit,
+          dialect: 'sqlite'
+        });
+      }
 
       setGeneratedSql(sql);
 
+      // Execute safe analytical query against database or imported dataset
       const res = await DatabaseApiClient.executeQuery(sql);
+
       if (res.status === 'error' || res.status === 'cancelled') {
-        setQueryError(res.errorMessage || 'Failed to execute query');
+        setQueryError(res.errorMessage || 'Failed to execute visualization query');
       } else {
         setInternalQueryResult(res);
         setRawSelectedMeasure(meas);
+        setQueryError(null);
 
         setConfig(prev => ({
           ...prev,
-          title: prev.title || `${targetDataset.name} by ${dim || 'Category'}`
+          title: prev.title && !prev.title.startsWith('Data Visualization')
+            ? prev.title
+            : `${sourceName} by ${dim || 'Category'}`
         }));
       }
     } catch (err: any) {
@@ -257,98 +445,138 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
     } finally {
       setIsQueryLoading(false);
     }
-  }, [rawSelectedMeasure]);
+  }, [rawSelectedMeasure, currentDbTable, currentDataset, activeDialect]);
+
+  // Initialize defaults on database table change
+  useEffect(() => {
+    if (dataSourceMode !== 'database' || !currentDbTable) return;
+
+    const cols = databaseTableColumns.length > 0
+      ? databaseTableColumns
+      : activeDbTableDetails?.columns
+      ? ColumnTypeDetector.fromTableColumns(activeDbTableDetails.columns)
+      : [];
+
+    if (cols.length === 0) return;
+
+    // Pick smart dimension: category, name, text, date, or first column
+    const categoryCol = cols.find(c =>
+      c.name.toLowerCase().includes('country') ||
+      c.name.toLowerCase().includes('city') ||
+      c.name.toLowerCase().includes('state') ||
+      c.name.toLowerCase().includes('status') ||
+      c.name.toLowerCase().includes('category') ||
+      c.name.toLowerCase().includes('type')
+    );
+    const textCol = cols.find(c => c.isCategorical && !c.name.toLowerCase().includes('id'));
+    const dateCol = cols.find(c => c.isDateOrTime);
+    const defaultX = categoryCol?.name || textCol?.name || dateCol?.name || cols[0]?.name || '';
+
+    // Pick smart measure: value, amount, price, total, revenue, salary, or numeric column
+    const metricCol = cols.find(c =>
+      c.isNumeric && (
+        c.name.toLowerCase().includes('value') ||
+        c.name.toLowerCase().includes('amount') ||
+        c.name.toLowerCase().includes('total') ||
+        c.name.toLowerCase().includes('price') ||
+        c.name.toLowerCase().includes('revenue') ||
+        c.name.toLowerCase().includes('credit') ||
+        c.name.toLowerCase().includes('spend') ||
+        c.name.toLowerCase().includes('salary')
+      )
+    );
+    const numCol = cols.find(c => c.isNumeric && !c.name.toLowerCase().endsWith('_id') && c.name.toLowerCase() !== 'id');
+    const idCol = cols.find(c => c.name.toLowerCase() === 'id' || c.name.toLowerCase().endsWith('_id'));
+    const defaultMeasure = metricCol?.name || numCol?.name || idCol?.name || (cols[1]?.name || cols[0]?.name || '');
+
+    const initialAgg = (metricCol || numCol) ? 'sum' : 'count';
+
+    setRawSelectedMeasure(defaultMeasure);
+
+    const initialConfig: ChartConfig = {
+      ...config,
+      chartType: 'bar',
+      xAxis: defaultX,
+      yAxis: defaultMeasure,
+      aggregation: initialAgg,
+      sortOrder: 'desc',
+      limit: 50,
+      title: `${currentDbTable.name} - ${defaultX} by ${defaultMeasure}`
+    };
+
+    setConfig(initialConfig);
+    executeAnalyticalQuery('database', initialConfig, defaultMeasure, {
+      schema: currentDbTable.schema,
+      name: currentDbTable.name
+    });
+  }, [currentDbTable?.schema, currentDbTable?.name, databaseTableColumns.length, dataSourceMode]);
 
   // Initialize defaults on dataset change
   useEffect(() => {
-    if (dataSourceMode === 'imported' && currentDataset && currentDataset.columns.length > 0) {
-      const cols = currentDataset.columns;
+    if (dataSourceMode !== 'imported' || !currentDataset || currentDataset.columns.length === 0) return;
 
-      // Smart dimension candidate: look for Region, Category, Date, or first text column
-      const regionCol = cols.find(c => c.name.toLowerCase() === 'region');
-      const textCol = cols.find(c => c.dataType === 'text' || c.dataType === 'date');
-      const defaultX = regionCol?.name || textCol?.name || cols[0].name;
+    const cols = currentDataset.columns;
+    const regionCol = cols.find(c => c.name.toLowerCase() === 'region');
+    const textCol = cols.find(c => c.dataType === 'text' || c.dataType === 'date');
+    const defaultX = regionCol?.name || textCol?.name || cols[0].name;
 
-      // Smart measure candidate: look for Order_ID, Sales, Quantity, or numeric column
-      const orderCol = cols.find(c => c.name.toLowerCase() === 'order_id');
-      const salesCol = cols.find(c => c.name.toLowerCase() === 'sales');
-      const numCol = cols.find(c => c.dataType === 'integer' || c.dataType === 'numeric');
-      const defaultMeasure = orderCol?.name || salesCol?.name || numCol?.name || (cols[1]?.name || cols[0].name);
+    const orderCol = cols.find(c => c.name.toLowerCase() === 'order_id');
+    const salesCol = cols.find(c => c.name.toLowerCase() === 'sales');
+    const numCol = cols.find(c => c.dataType === 'integer' || c.dataType === 'numeric');
+    const defaultMeasure = orderCol?.name || salesCol?.name || numCol?.name || (cols[1]?.name || cols[0].name);
 
-      const initialAgg = orderCol || !numCol ? 'count' : 'sum';
+    const initialAgg = orderCol || !numCol ? 'count' : 'sum';
 
-      setRawSelectedMeasure(defaultMeasure);
+    setRawSelectedMeasure(defaultMeasure);
 
-      const initialConfig: ChartConfig = {
-        ...config,
-        chartType: 'bar',
-        xAxis: defaultX,
-        yAxis: defaultMeasure,
-        aggregation: initialAgg,
-        sortOrder: 'desc',
-        limit: 50,
-        title: `${currentDataset.name} - ${defaultX} by ${defaultMeasure}`
-      };
+    const initialConfig: ChartConfig = {
+      ...config,
+      chartType: 'bar',
+      xAxis: defaultX,
+      yAxis: defaultMeasure,
+      aggregation: initialAgg,
+      sortOrder: 'desc',
+      limit: 50,
+      title: `${currentDataset.name} - ${defaultX} by ${defaultMeasure}`
+    };
 
-      setConfig(initialConfig);
-      executeAnalyticalQuery(currentDataset, initialConfig, defaultMeasure);
-    }
+    setConfig(initialConfig);
+    executeAnalyticalQuery('imported', initialConfig, defaultMeasure);
   }, [currentDataset?.datasetId, dataSourceMode]);
 
-  // Handle dataset switching
+  // Handle switching database table
+  const handleSwitchDbTable = (tableKey: string) => {
+    setSelectedDbTableKey(tableKey);
+    const [schema, name] = tableKey.split('.');
+    const found = databaseTables.find(t => t.schema === schema && t.name === name);
+    if (found && onSelectTable) {
+      onSelectTable(found);
+    }
+  };
+
+  // Handle switching dataset
   const handleSwitchDataset = (newDs: ImportedDataset) => {
     setSelectedDatasetId(newDs.datasetId);
     onSelectDataset?.(newDs);
     setInternalQueryResult(null);
-
-    // Refresh columns & clear invalid previous dimension/measures
-    const cols = newDs.columns;
-    const hasX = cols.some(c => c.name === config.xAxis);
-    const hasMeasure = cols.some(c => c.name === rawSelectedMeasure);
-
-    const regionCol = cols.find(c => c.name.toLowerCase() === 'region');
-    const textCol = cols.find(c => c.dataType === 'text' || c.dataType === 'date');
-    const nextX = hasX ? config.xAxis : (regionCol?.name || textCol?.name || cols[0]?.name || '');
-
-    const orderCol = cols.find(c => c.name.toLowerCase() === 'order_id');
-    const numCol = cols.find(c => c.dataType === 'integer' || c.dataType === 'numeric');
-    const nextMeasure = hasMeasure ? rawSelectedMeasure : (orderCol?.name || numCol?.name || cols[0]?.name || '');
-
-    setRawSelectedMeasure(nextMeasure);
-
-    const nextConfig: ChartConfig = {
-      ...config,
-      xAxis: nextX,
-      yAxis: nextMeasure,
-      secondaryMeasures: [],
-      title: `${newDs.name} Overview`
-    };
-
-    setConfig(nextConfig);
-    executeAnalyticalQuery(newDs, nextConfig, nextMeasure);
   };
 
   // Re-run query when config dimensions, measures, aggregation, chartType change
   const handleChangeConfig = (newConfig: ChartConfig) => {
     setConfig(newConfig);
-    if (dataSourceMode === 'imported' && currentDataset) {
-      executeAnalyticalQuery(currentDataset, newConfig);
+    if (dataSourceMode === 'database' && currentDbTable) {
+      executeAnalyticalQuery('database', newConfig);
+    } else if (dataSourceMode === 'imported' && currentDataset) {
+      executeAnalyticalQuery('imported', newConfig);
     }
   };
 
-  // 4. Validate current configuration
-  const activeSchemaColumns = useMemo(() => {
-    if (dataSourceMode === 'imported' && datasetColumns.length > 0) {
-      return datasetColumns;
-    }
-    return detectedColumns.length > 0 ? detectedColumns : datasetColumns;
-  }, [dataSourceMode, datasetColumns, detectedColumns]);
-
+  // Validate current configuration
   const validation = useMemo(() => {
     return ChartRecommender.validateConfig(config, activeSchemaColumns);
   }, [config, activeSchemaColumns]);
 
-  // 5. Process chart data with safe NULL handling and sorting
+  // Process chart data with safe sorting, null handling, and aggregation mapping
   const processedData = useMemo(() => {
     if (!effectiveQueryResult || !effectiveQueryResult.rows) return [];
     return VisualizationDataProcessor.process(effectiveQueryResult.rows, config, activeSchemaColumns);
@@ -360,7 +588,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
     if (cols.length === 0) return;
     setIsAiRecommending(true);
     try {
-      const rowCount = effectiveQueryResult?.rowCount || currentDataset?.rowCount || 100;
+      const rowCount = effectiveQueryResult?.rowCount || currentDataset?.rowCount || currentDbTable?.approximateRowCount || 100;
       const rec = ChartRecommender.recommend(cols, rowCount);
       const defaultY = rec.yAxis || cols.find(c => c.isNumeric)?.name || '';
       const defaultX = rec.xAxis || cols.find(c => !c.isNumeric || c.isDateOrTime)?.name || '';
@@ -376,8 +604,10 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
       };
 
       setConfig(updated);
-      if (dataSourceMode === 'imported' && currentDataset) {
-        executeAnalyticalQuery(currentDataset, updated, defaultY);
+      if (dataSourceMode === 'database' && currentDbTable) {
+        executeAnalyticalQuery('database', updated, defaultY);
+      } else if (dataSourceMode === 'imported' && currentDataset) {
+        executeAnalyticalQuery('imported', updated, defaultY);
       }
     } finally {
       setIsAiRecommending(false);
@@ -430,8 +660,10 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
 
   const handleLoadSavedVisualization = (saved: SavedVisualization) => {
     setConfig({ ...saved.config });
-    if (dataSourceMode === 'imported' && currentDataset) {
-      executeAnalyticalQuery(currentDataset, saved.config);
+    if (dataSourceMode === 'database' && currentDbTable) {
+      executeAnalyticalQuery('database', saved.config);
+    } else if (dataSourceMode === 'imported' && currentDataset) {
+      executeAnalyticalQuery('imported', saved.config);
     }
   };
 
@@ -472,27 +704,23 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
     setTimeout(() => setCopiedSql(false), 2000);
   };
 
-  // Check data availability
-  const hasImportedData = Boolean(currentDataset || (importedDatasets && importedDatasets.length > 0));
-  const hasDbConnection = Boolean(isConnected);
-
-  // 1. Neither connected nor imported
-  if (!hasImportedData && !hasDbConnection) {
+  // Check if completely disconnected and without any data sources
+  if (!hasImportedData && !hasDbConnection && !hasQueryResult) {
     return (
       <div id="vis-empty-state" className="flex-1 flex flex-col items-center justify-center h-full bg-slate-950 p-6 text-center">
         <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 mb-4">
           <Layers className="w-7 h-7 text-indigo-400" />
         </div>
-        <h2 className="text-lg font-semibold text-slate-200">No data source available.</h2>
+        <h2 className="text-lg font-semibold text-slate-200">No data source connected.</h2>
         <p className="text-xs text-slate-400 max-w-md mt-1 mb-6">
-          Connect a database or import a dataset to create visualizations.
+          Connect your PostgreSQL, MySQL, SQLite, or SQL Server database, or import a dataset to visualize data instantly.
         </p>
         <div className="flex items-center space-x-3">
           {onOpenConnectModal && (
             <button
               id="btn-vis-connect-db"
               onClick={onOpenConnectModal}
-              className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-lg shadow-indigo-600/20 transition-all"
+              className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-lg shadow-indigo-600/20 transition-all cursor-pointer"
             >
               <Database className="w-4 h-4" />
               <span>Connect Database</span>
@@ -502,37 +730,13 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
             <button
               id="btn-vis-import-dataset"
               onClick={onOpenImportModal}
-              className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow-lg shadow-emerald-600/20 transition-all"
+              className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow-lg shadow-emerald-600/20 transition-all cursor-pointer"
             >
               <FileSpreadsheet className="w-4 h-4" />
               <span>Import Dataset</span>
             </button>
           )}
         </div>
-      </div>
-    );
-  }
-
-  // 2. Database only mode, but no query result yet
-  if (!hasImportedData && hasDbConnection && (!effectiveQueryResult || effectiveQueryResult.rows.length === 0)) {
-    return (
-      <div id="vis-no-query-data" className="flex-1 flex flex-col items-center justify-center h-full bg-slate-950 p-6 text-center">
-        <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 mb-4">
-          <BarChart2 className="w-7 h-7 text-emerald-400" />
-        </div>
-        <h2 className="text-lg font-semibold text-slate-200">No data available for visualization.</h2>
-        <p className="text-xs text-slate-400 max-w-md mt-1 mb-4">
-          Execute a query in the <span className="text-indigo-400 font-medium">SQL Editor</span> or run an operation in the <span className="text-emerald-400 font-medium">Analysis Toolkit</span> to visualize live database results.
-        </p>
-        {onOpenImportModal && (
-          <button
-            onClick={onOpenImportModal}
-            className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 text-slate-300 border border-slate-700 text-xs transition-colors"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Or import a CSV/XLSX/JSON file</span>
-          </button>
-        )}
       </div>
     );
   }
@@ -547,15 +751,15 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
       }`}
     >
       {/* Top Controls Toolbar */}
-      <header className="flex items-center justify-between px-4 py-2.5 bg-slate-900 border-b border-slate-800 text-xs z-10 flex-shrink-0">
-        {/* Left: View Mode Toggle & Data Source Badge */}
-        <div className="flex items-center space-x-3">
+      <header className="flex items-center justify-between px-4 py-2 bg-slate-900 border-b border-slate-800 text-xs z-10 flex-shrink-0">
+        {/* Left: View Mode Toggle & Data Source Selectors */}
+        <div className="flex items-center space-x-3 flex-wrap gap-y-2">
           {/* Table ↔ Chart Switcher */}
           <div className="flex items-center p-0.5 rounded-lg bg-slate-950 border border-slate-800">
             <button
               id="btn-vis-mode-chart"
               onClick={() => setActiveViewMode('chart')}
-              className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                 activeViewMode === 'chart'
                   ? 'bg-indigo-600 text-white'
                   : 'text-slate-400 hover:text-slate-200'
@@ -567,7 +771,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
             <button
               id="btn-vis-mode-table"
               onClick={() => setActiveViewMode('table')}
-              className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                 activeViewMode === 'table'
                   ? 'bg-slate-800 text-white'
                   : 'text-slate-400 hover:text-slate-200'
@@ -578,45 +782,105 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
             </button>
           </div>
 
-          <div className="h-4 w-px bg-slate-800" />
+          <div className="h-4 w-px bg-slate-800 hidden sm:block" />
 
-          {/* Toggle between Imported Dataset & Connected Database when both exist */}
-          {hasImportedData && hasDbConnection && (
-            <div className="flex items-center p-0.5 rounded-lg bg-slate-950 border border-slate-800">
-              <button
-                id="btn-switch-source-imported"
-                onClick={() => setDataSourceMode('imported')}
-                className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                  dataSourceMode === 'imported'
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Imported Datasets ({importedDatasets.length})
-              </button>
+          {/* Data Source Type Tabs */}
+          <div className="flex items-center p-0.5 rounded-lg bg-slate-950 border border-slate-800">
+            {hasDbConnection && (
               <button
                 id="btn-switch-source-db"
                 onClick={() => setDataSourceMode('database')}
-                className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                   dataSourceMode === 'database'
-                    ? 'bg-indigo-600 text-white'
+                    ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Database
+                <Database className="w-3.5 h-3.5" />
+                <span>Database Tables ({databaseTables.length})</span>
               </button>
+            )}
+
+            {hasImportedData && (
+              <button
+                id="btn-switch-source-imported"
+                onClick={() => setDataSourceMode('imported')}
+                className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                  dataSourceMode === 'imported'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Imported ({importedDatasets.length})</span>
+              </button>
+            )}
+
+            {hasQueryResult && (
+              <button
+                id="btn-switch-source-query-result"
+                onClick={() => setDataSourceMode('query_result')}
+                className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                  dataSourceMode === 'query_result'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <DatabaseZap className="w-3.5 h-3.5" />
+                <span>SQL Result</span>
+              </button>
+            )}
+          </div>
+
+          {/* Active Data Source Specific Dropdown & Badge */}
+          {dataSourceMode === 'database' && (
+            <div id="vis-database-source-selector" className="flex items-center space-x-2 bg-slate-950/90 border border-indigo-500/30 rounded-lg px-2.5 py-1 text-xs">
+              <div className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+              <span className="text-[10px] uppercase font-bold tracking-wider text-indigo-400">Database:</span>
+
+              {databaseTables.length > 0 ? (
+                <select
+                  id="select-database-table-vis"
+                  value={selectedDbTableKey}
+                  onChange={e => handleSwitchDbTable(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 text-indigo-300 rounded px-2 py-0.5 text-xs font-mono font-medium focus:outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  {databaseTables.map(t => {
+                    const key = `${t.schema}.${t.name}`;
+                    return (
+                      <option key={key} value={key}>
+                        {t.name} {t.schema !== 'public' ? `(${t.schema})` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              ) : (
+                <span className="text-slate-400 text-xs">No tables discovered</span>
+              )}
+
+              {currentDbTable?.approximateRowCount !== undefined && (
+                <>
+                  <span className="text-slate-600">•</span>
+                  <span className="text-slate-400 font-mono text-[11px]">
+                    ~{currentDbTable.approximateRowCount.toLocaleString()} rows
+                  </span>
+                </>
+              )}
+
+              {effectiveQueryResult && (
+                <>
+                  <span className="text-slate-600">•</span>
+                  <span className="text-indigo-400 font-mono text-[10px]">{effectiveQueryResult.executionTimeMs}ms</span>
+                </>
+              )}
             </div>
           )}
 
-          {/* Data Source Badge: Imported Dataset Details */}
-          {dataSourceMode === 'imported' && currentDataset ? (
-            <div id="vis-dataset-source-badge" className="flex items-center space-x-2 bg-slate-950/80 border border-emerald-500/30 rounded-lg px-2.5 py-1 text-xs">
+          {dataSourceMode === 'imported' && currentDataset && (
+            <div id="vis-dataset-source-badge" className="flex items-center space-x-2 bg-slate-950/90 border border-emerald-500/30 rounded-lg px-2.5 py-1 text-xs">
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <div className="flex items-center space-x-1.5">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400">Data Source:</span>
-                <span className="text-slate-300 font-medium text-[11px]">Imported Dataset</span>
-              </div>
-              <span className="text-slate-600">•</span>
+              <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400">Dataset:</span>
+
               {importedDatasets.length > 1 ? (
                 <select
                   id="select-imported-dataset-vis"
@@ -625,7 +889,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
                     const found = importedDatasets.find(d => d.datasetId === e.target.value);
                     if (found) handleSwitchDataset(found);
                   }}
-                  className="bg-slate-900 border border-slate-700 text-emerald-300 rounded px-1.5 py-0.5 text-xs font-mono font-medium focus:outline-none focus:border-emerald-500"
+                  className="bg-slate-900 border border-slate-700 text-emerald-300 rounded px-2 py-0.5 text-xs font-mono font-medium focus:outline-none focus:border-emerald-500 cursor-pointer"
                 >
                   {importedDatasets.map(ds => (
                     <option key={ds.datasetId} value={ds.datasetId}>
@@ -636,6 +900,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
               ) : (
                 <span className="font-mono text-emerald-300 font-semibold">{currentDataset.tableName}</span>
               )}
+
               <span className="text-slate-600">•</span>
               <span className="text-slate-300 font-mono text-[11px]">{currentDataset.rowCount.toLocaleString()} rows</span>
               <span className="text-slate-600">•</span>
@@ -647,33 +912,32 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
                 </>
               )}
             </div>
-          ) : effectiveQueryResult ? (
-            /* Database Query Result Info */
-            <div className="flex items-center space-x-2 text-slate-400 text-[11px]">
-              <span className="font-mono text-slate-200 font-medium">{effectiveQueryResult.rowCount.toLocaleString()}</span>
-              <span>records</span>
-              <span>•</span>
-              <span className="font-mono text-slate-200">{effectiveQueryResult.columns.length}</span>
-              <span>columns</span>
-              <span>•</span>
-              <span className="font-mono">{effectiveQueryResult.executionTimeMs}ms</span>
+          )}
+
+          {dataSourceMode === 'query_result' && effectiveQueryResult && (
+            <div className="flex items-center space-x-2 bg-slate-950/90 border border-purple-500/30 rounded-lg px-2.5 py-1 text-xs">
+              <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+              <span className="text-[10px] uppercase font-bold tracking-wider text-purple-400">SQL Run:</span>
+              <span className="font-mono text-slate-200 font-medium">{effectiveQueryResult.rowCount.toLocaleString()} rows</span>
+              <span className="text-slate-600">•</span>
+              <span className="font-mono text-slate-400">{effectiveQueryResult.columns.length} cols</span>
             </div>
-          ) : null}
+          )}
         </div>
 
         {/* Right: Actions (SQL Preview, Insights, Save, Export, Fullscreen) */}
         <div className="flex items-center space-x-2">
-          {/* Generated SQL Preview Toggle */}
+          {/* Generated Dialect SQL Preview Toggle */}
           {generatedSql && (
             <button
               id="btn-toggle-sql-preview"
               onClick={() => setIsSqlPreviewOpen(prev => !prev)}
-              className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+              className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
                 isSqlPreviewOpen
                   ? 'bg-indigo-600/30 border-indigo-500 text-indigo-200'
                   : 'bg-slate-800 hover:bg-slate-750 text-slate-300 border-slate-700'
               }`}
-              title="View generated SQLite SQL query"
+              title={`View generated ${activeDialect.toUpperCase()} SQL query`}
             >
               <Code className="w-3.5 h-3.5 text-indigo-400" />
               <span>SQL</span>
@@ -682,12 +946,12 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
           )}
 
           {/* Refresh Query Button */}
-          {dataSourceMode === 'imported' && currentDataset && (
+          {(dataSourceMode === 'database' || dataSourceMode === 'imported') && (
             <button
               id="btn-refresh-vis-query"
-              onClick={() => executeAnalyticalQuery(currentDataset, config)}
+              onClick={() => executeAnalyticalQuery(dataSourceMode, config)}
               disabled={isQueryLoading}
-              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 transition-colors"
+              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
               title="Refresh visualization query"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-indigo-400 ${isQueryLoading ? 'animate-spin' : ''}`} />
@@ -700,7 +964,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
             id="btn-generate-insights"
             onClick={handleGenerateInsights}
             disabled={!effectiveQueryResult || isGeneratingInsights}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 font-medium transition-colors disabled:opacity-50"
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 font-medium transition-colors cursor-pointer disabled:opacity-50"
             title="Generate factual data insights"
           >
             <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
@@ -711,7 +975,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
           <button
             id="btn-save-visualization"
             onClick={() => setIsSaveDialogOpen(true)}
-            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 transition-colors"
+            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
             title="Save current visualization configuration"
           >
             <Bookmark className="w-3.5 h-3.5 text-indigo-400" />
@@ -725,20 +989,20 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
               onClick={() => {
                 const resToPass = effectiveQueryResult || {
                   query: generatedSql,
-                  columns: datasetColumns.map(c => ({ name: c.name, dataType: c.dataType })),
+                  columns: activeSchemaColumns.map(c => ({ name: c.name, dataType: c.dataType })),
                   rows: [],
-                  rowCount: currentDataset?.rowCount || 0,
+                  rowCount: currentDbTable?.approximateRowCount || currentDataset?.rowCount || 0,
                   executionTimeMs: 0,
                   status: 'success'
                 };
                 onAddToDashboard(
                   config,
                   resToPass,
-                  currentDataset?.tableName || selectedTable?.name,
+                  currentDbTable?.name || currentDataset?.tableName || selectedTable?.name,
                   currentDataset?.datasetId
                 );
               }}
-              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-300 hover:text-white border border-emerald-700/60 transition-colors"
+              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-300 hover:text-white border border-emerald-700/60 transition-colors cursor-pointer"
               title="Add this chart to an executive dashboard"
             >
               <LayoutDashboard className="w-3.5 h-3.5 text-emerald-400" />
@@ -750,7 +1014,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
           {savedVisualizations.length > 0 && (
             <button
               onClick={() => setIsSavedModalOpen(true)}
-              className="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 text-xs flex items-center space-x-1"
+              className="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 text-xs flex items-center space-x-1 cursor-pointer"
             >
               <span>Saved</span>
               <span className="px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[10px] font-bold">
@@ -764,7 +1028,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
             <button
               id="btn-export-menu"
               onClick={() => setIsExportMenuOpen(prev => !prev)}
-              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 transition-colors"
+              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Export</span>
@@ -780,7 +1044,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
                     handleDownloadPng();
                     setIsExportMenuOpen(false);
                   }}
-                  className="w-full text-left px-3 py-2 hover:bg-slate-850 flex items-center space-x-2 text-slate-200"
+                  className="w-full text-left px-3 py-2 hover:bg-slate-850 flex items-center space-x-2 text-slate-200 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5 text-indigo-400" />
                   <span>Download Chart as PNG</span>
@@ -790,7 +1054,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
                     handleExportCsv();
                     setIsExportMenuOpen(false);
                   }}
-                  className="w-full text-left px-3 py-2 hover:bg-slate-850 flex items-center space-x-2 text-slate-200"
+                  className="w-full text-left px-3 py-2 hover:bg-slate-850 flex items-center space-x-2 text-slate-200 cursor-pointer"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
                   <span>Export Data as CSV</span>
@@ -800,7 +1064,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
                     handleCopyConfig();
                     setIsExportMenuOpen(false);
                   }}
-                  className="w-full text-left px-3 py-2 hover:bg-slate-850 flex items-center space-x-2 text-slate-200"
+                  className="w-full text-left px-3 py-2 hover:bg-slate-850 flex items-center space-x-2 text-slate-200 cursor-pointer"
                 >
                   {copiedConfig ? (
                     <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -816,7 +1080,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
           {/* Fullscreen Toggle */}
           <button
             onClick={() => setIsFullscreen(prev => !prev)}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 transition-colors"
+            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 transition-colors cursor-pointer"
             title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
           >
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
@@ -830,11 +1094,13 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
           <div className="flex items-center justify-between text-slate-400">
             <span className="font-semibold text-slate-300 flex items-center space-x-1.5">
               <Code className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Server-Side Aggregated SQLite Query</span>
+              <span>
+                Server-Side Aggregated {activeDialect.toUpperCase()} Query
+              </span>
             </span>
             <button
               onClick={handleCopySql}
-              className="flex items-center space-x-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
+              className="flex items-center space-x-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
             >
               {copiedSql ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-slate-400" />}
               <span>{copiedSql ? 'Copied' : 'Copy SQL'}</span>
@@ -851,16 +1117,14 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
         <div className="bg-rose-500/10 border-b border-rose-500/20 px-4 py-2 flex items-center justify-between text-rose-300 text-xs flex-shrink-0">
           <div className="flex items-center space-x-2">
             <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-            <span>{queryError}</span>
+            <span>Unable to load database table data: {queryError}</span>
           </div>
-          {currentDataset && (
-            <button
-              onClick={() => executeAnalyticalQuery(currentDataset, config)}
-              className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30"
-            >
-              Retry
-            </button>
-          )}
+          <button
+            onClick={() => executeAnalyticalQuery(dataSourceMode === 'database' ? 'database' : 'imported', config)}
+            className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 cursor-pointer"
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -889,11 +1153,15 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
         {/* Center: Stage Canvas */}
         <div className="flex-1 flex flex-col h-full overflow-hidden p-4 min-w-0 relative">
           {/* Query Loading Overlay */}
-          {isQueryLoading && (
+          {(isQueryLoading || isLoadingTableDetails) && (
             <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-20">
               <div className="flex items-center space-x-2.5 px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 shadow-xl text-slate-200 text-xs">
                 <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
-                <span>Aggregating dataset records...</span>
+                <span>
+                  {isLoadingTableDetails
+                    ? 'Loading database table schema...'
+                    : 'Querying and aggregating database table...'}
+                </span>
               </div>
             </div>
           )}
@@ -902,7 +1170,7 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
             effectiveQueryResult ? (
               <TableView columns={effectiveQueryResult.columns} rows={effectiveQueryResult.rows} />
             ) : (
-              <div className="text-center p-8 text-slate-400">No tabular data to display.</div>
+              <div className="text-center p-8 text-slate-400 text-xs">No tabular data to display.</div>
             )
           ) : (
             <div
@@ -941,7 +1209,11 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
                   </div>
                 ) : !effectiveQueryResult || effectiveQueryResult.rows.length === 0 ? (
                   <div className="text-center p-8 max-w-md text-slate-400 text-xs">
-                    No records matched the analytical query. Adjust dimensions or filters.
+                    {queryError ? (
+                      <span className="text-rose-400">{queryError}</span>
+                    ) : (
+                      'No records matched the analytical query. Adjust dimensions or filters.'
+                    )}
                   </div>
                 ) : config.chartType === 'kpi' ? (
                   <KpiCardView rows={effectiveQueryResult.rows} config={config} />

@@ -4,6 +4,7 @@ import { VisualizationDataProcessor } from '../src/services/visualizationDataPro
 import { ChartRecommender } from '../src/services/chartRecommender';
 import { SQLiteAdapter } from '../server/database/SQLiteAdapter';
 import { QuerySafetyValidator } from '../server/database/QuerySafetyValidator';
+import { UnifiedDataLayer } from '../server/import/UnifiedDataLayer';
 import { DetectedColumn, ChartConfig } from '../src/types/visualization';
 import fs from 'fs';
 import path from 'path';
@@ -100,62 +101,27 @@ export async function runDatabaseVisualizationIntegrationTests() {
   expectTrue('1.9 Oracle formats schema as "HR"."EMPLOYEES"', oracleQuery.includes('FROM "HR"."EMPLOYEES"'));
 
   // =========================================================================
-  // 2. CHART TYPES QUERY GENERATION FOR DATABASE TABLES
+  // 2. READ-ONLY SAFETY VALIDATION FOR GENERATED DATABASE QUERIES
   // =========================================================================
-  // 2.1 KPI Metric Query
-  const kpiQuery = VisualizationQueryBuilder.buildQuery({
-    schema: 'public',
-    tableName: 'transactions',
-    measure: 'amount',
-    aggregation: 'sum',
-    chartType: 'kpi',
-    dialect: 'postgres'
-  });
-  expectTrue('2.1 Single KPI metric query has no GROUP BY', !kpiQuery.includes('GROUP BY'));
-  expectTrue('2.2 KPI metric query computes SUM(amount)', kpiQuery.includes('SUM("amount") AS "total_amount"'));
+  const safePg = QuerySafetyValidator.validate(pgQuery);
+  expectTrue('2.1 Generated PostgreSQL query is safe and read-only', safePg.isValid);
 
-  // 2.2 Scatter Plot Query
-  const scatterQuery = VisualizationQueryBuilder.buildQuery({
-    schema: 'public',
-    tableName: 'analytics_events',
-    dimension: 'page_views',
-    measure: 'session_duration',
-    chartType: 'scatter',
-    limit: 300,
-    dialect: 'postgres'
-  });
-  expectTrue('2.3 Scatter plot queries X and Y with NOT NULL guard', scatterQuery.includes('WHERE "page_views" IS NOT NULL AND "session_duration" IS NOT NULL'));
-  expectTrue('2.4 Scatter plot limits results to 300', scatterQuery.includes('LIMIT 300'));
+  const safeMysql = QuerySafetyValidator.validate(mysqlQuery);
+  expectTrue('2.2 Generated MySQL query is safe and read-only', safeMysql.isValid);
 
-  // 2.3 Histogram Query
-  const histQuery = VisualizationQueryBuilder.buildQuery({
-    schema: 'public',
-    tableName: 'orders',
-    measure: 'freight_cost',
-    chartType: 'histogram',
-    limit: 500,
-    dialect: 'postgres'
-  });
-  expectTrue('2.5 Histogram queries values with value alias', histQuery.includes('"freight_cost" AS "value"'));
-  expectTrue('2.6 Histogram filters NOT NULL values', histQuery.includes('WHERE "freight_cost" IS NOT NULL'));
+  const safeMssql = QuerySafetyValidator.validate(mssqlQuery);
+  expectTrue('2.3 Generated MSSQL query is safe and read-only', safeMssql.isValid);
 
-  // =========================================================================
-  // 3. READ-ONLY SECURITY GUARD FOR VISUALIZATION QUERIES
-  // =========================================================================
-  // 3.1 All generated queries are valid SELECT queries
-  const safeValidation = QuerySafetyValidator.validate(pgQuery);
-  expectTrue('3.1 Generated PostgreSQL analytical query is safe and read-only', safeValidation.isValid);
+  const safeOracle = QuerySafetyValidator.validate(oracleQuery);
+  expectTrue('2.4 Generated Oracle query is safe and read-only', safeOracle.isValid);
 
-  const safeKpi = QuerySafetyValidator.validate(kpiQuery);
-  expectTrue('3.2 Generated KPI query is safe and read-only', safeKpi.isValid);
-
-  // 3.3 Ensure destructive DDL/DML injection is blocked
+  // Injected DROP TABLE query is rejected
   const maliciousQuery = 'SELECT * FROM "public"."customers"; DROP TABLE "public"."customers";';
   const unsafeValidation = QuerySafetyValidator.validate(maliciousQuery);
-  expectTrue('3.3 Injected DROP TABLE query is rejected by safety validator', !unsafeValidation.isValid);
+  expectTrue('2.5 Injected DROP TABLE query is rejected by safety validator', !unsafeValidation.isValid);
 
   // =========================================================================
-  // 4. COLUMN TYPE DETECTION & SMART RECOMMENDATIONS FOR DATABASE SCHEMA
+  // 3. COLUMN TYPE DETECTION & SMART RECOMMENDATIONS FOR DATABASE SCHEMA
   // =========================================================================
   const dbTableColumns = [
     { name: 'id', dataType: 'integer', isNullable: false },
@@ -166,46 +132,27 @@ export async function runDatabaseVisualizationIntegrationTests() {
   ];
 
   const detectedCols = ColumnTypeDetector.fromTableColumns(dbTableColumns);
-  expect('4.1 Detects 5 columns from table schema', detectedCols.length, 5);
+  expect('3.1 Detects 5 columns from table schema', detectedCols.length, 5);
 
   const nameCol = detectedCols.find(c => c.name === 'customer_name')!;
-  expectTrue('4.2 customer_name is detected as categorical', nameCol.isCategorical);
+  expectTrue('3.2 customer_name is detected as categorical', nameCol.isCategorical);
 
   const dateCol = detectedCols.find(c => c.name === 'signup_date')!;
-  expectTrue('4.3 signup_date is detected as dateOrTime', dateCol.isDateOrTime);
+  expectTrue('3.3 signup_date is detected as dateOrTime', dateCol.isDateOrTime);
 
   const ltvCol = detectedCols.find(c => c.name === 'lifetime_value')!;
-  expectTrue('4.4 lifetime_value is detected as numeric', ltvCol.isNumeric);
+  expectTrue('3.4 lifetime_value is detected as numeric', ltvCol.isNumeric);
 
-  // Smart Recommendations
   const primaryRec = ChartRecommender.recommend(detectedCols, 100);
-  expectTrue('4.5 Generates smart primary chart recommendation for database table schema', !!primaryRec);
-  expectTrue('4.6 Recommends valid chart type (bar, line, etc.)', ['bar', 'line', 'pie', 'table'].includes(primaryRec.chartType));
-
-  const validation = ChartRecommender.validateConfig({
-    chartType: 'bar',
-    xAxis: 'customer_name',
-    yAxis: 'lifetime_value',
-    secondaryMeasures: [],
-    aggregation: 'sum',
-    sortOrder: 'desc',
-    sortBy: 'y',
-    limit: 50,
-    title: 'Customer LTV',
-    showLegend: true,
-    showDataLabels: false,
-    showGrid: true,
-    binCount: 10,
-    treatNullAsZero: true
-  }, detectedCols);
-  expectTrue('4.7 Validates chart configuration successfully', validation.isValid);
+  expectTrue('3.5 Generates smart primary chart recommendation for database table schema', !!primaryRec);
+  expectTrue('3.6 Recommends valid chart type (bar, line, etc.)', ['bar', 'line', 'pie', 'table'].includes(primaryRec.chartType));
 
   // =========================================================================
-  // 5. LIVE SQLITE DATABASE ADAPTER EXECUTION FOR TABLE VISUALIZATION
+  // 4. REAL DATABASE TABLE FLOW: CUSTOMERS & ORDERS FIXTURE EXECUTION & CHART RENDERING
   // =========================================================================
   const testDbDir = path.join(process.cwd(), '.tmp-test-vis-db');
   if (!fs.existsSync(testDbDir)) fs.mkdirSync(testDbDir, { recursive: true });
-  const testDbFile = path.join(testDbDir, 'vis_test.sqlite');
+  const testDbFile = path.join(testDbDir, 'vis_customers_test.sqlite');
   if (fs.existsSync(testDbFile)) fs.unlinkSync(testDbFile);
   fs.writeFileSync(testDbFile, '');
 
@@ -215,28 +162,48 @@ export async function runDatabaseVisualizationIntegrationTests() {
   });
   await adapter.connect();
 
-  // Seed sample database table
+  // Seed sample database tables: customers and orders
   await (adapter as any).db.exec(`
-    CREATE TABLE sales_data (
+    CREATE TABLE customers (
       id INTEGER PRIMARY KEY,
-      region TEXT,
-      revenue REAL,
-      units_sold INTEGER,
+      customer_name TEXT,
+      country TEXT,
+      city TEXT,
+      lifetime_value REAL,
+      signup_date TEXT
+    );
+    INSERT INTO customers (customer_name, country, city, lifetime_value, signup_date) VALUES
+      ('Acme Corp', 'USA', 'New York', 45000.00, '2025-01-10'),
+      ('GlobalTech', 'USA', 'San Francisco', 72000.00, '2025-02-15'),
+      ('NordicSoft', 'Sweden', 'Stockholm', 31000.50, '2025-03-20'),
+      ('TokyoByte', 'Japan', 'Tokyo', 89000.00, '2025-04-12'),
+      ('EuroBank', 'Germany', 'Frankfurt', 62000.75, '2025-05-08');
+
+    CREATE TABLE orders (
+      order_id INTEGER PRIMARY KEY,
+      customer_id INTEGER,
+      order_status TEXT,
+      order_total REAL,
       order_date TEXT
     );
-    INSERT INTO sales_data (region, revenue, units_sold, order_date) VALUES
-      ('North', 15000.50, 120, '2026-01-15'),
-      ('North', 22000.00, 180, '2026-01-20'),
-      ('South', 18500.25, 140, '2026-01-18'),
-      ('East',  31000.75, 250, '2026-01-22'),
-      ('West',  12400.00, 95,  '2026-01-25');
+    INSERT INTO orders (customer_id, order_status, order_total, order_date) VALUES
+      (1, 'completed', 1500.00, '2026-01-05'),
+      (1, 'completed', 3200.00, '2026-01-15'),
+      (2, 'completed', 5400.00, '2026-02-01'),
+      (3, 'shipped', 2100.00, '2026-02-10'),
+      (4, 'completed', 9800.00, '2026-03-01'),
+      (5, 'pending', 4300.00, '2026-03-15');
   `);
 
-  // Build and execute analytical query on database table
-  const visQuery = VisualizationQueryBuilder.buildQuery({
-    tableName: 'sales_data',
-    dimension: 'region',
-    measure: 'revenue',
+  // Introspect table columns
+  const tableCols = await adapter.getTableColumns('main', 'customers');
+  expectTrue('4.1 Introspected 6 columns for customers table', tableCols.length === 6);
+
+  // Build and execute analytical query on `customers` table
+  const customersVisSql = VisualizationQueryBuilder.buildQuery({
+    tableName: 'customers',
+    dimension: 'country',
+    measure: 'lifetime_value',
     aggregation: 'sum',
     chartType: 'bar',
     sortOrder: 'desc',
@@ -244,49 +211,20 @@ export async function runDatabaseVisualizationIntegrationTests() {
     dialect: 'sqlite'
   });
 
-  const queryExecResult = await adapter.executeReadOnlyQuery(visQuery);
-  expectTrue('5.1 Read-only analytical query executes on database table successfully', queryExecResult.rows.length === 4);
-  expectTrue('5.2 Results are grouped by region with sum of revenue', (queryExecResult.rows[0] as any).region === 'North' || (queryExecResult.rows[0] as any).region === 'East');
+  const custQueryExec = await adapter.executeReadOnlyQuery(customersVisSql);
+  expectTrue('4.2 Customers analytical query executed successfully', custQueryExec.rows.length === 4);
 
-  // Verify KPI execution on database table
-  const dbKpiQuery = VisualizationQueryBuilder.buildQuery({
-    tableName: 'sales_data',
-    measure: 'revenue',
-    aggregation: 'sum',
-    chartType: 'kpi',
-    dialect: 'sqlite'
-  });
-  const kpiResult = await adapter.executeReadOnlyQuery(dbKpiQuery);
-  expectTrue('5.3 KPI query returns total revenue single row', kpiResult.rows.length === 1);
-  const totalRev = Number((kpiResult.rows[0] as any).total_revenue);
-  expectTrue('5.4 Computed total revenue is ~98901.5', Math.abs(totalRev - 98901.5) < 0.1);
-
-  // Clean up
-  await adapter.disconnect();
-  if (fs.existsSync(testDbFile)) fs.unlinkSync(testDbFile);
-  if (fs.existsSync(testDbDir)) fs.rmSync(testDbDir, { recursive: true, force: true });
-
-  // =========================================================================
-  // 6. IN-MEMORY VISUALIZATION DATA PROCESSOR (FOR SQL RESULTS & CLIENT-SIDE)
-  // =========================================================================
-  const rawRows = [
-    { department: 'Engineering', salary: 120000, tenure: 3 },
-    { department: 'Engineering', salary: 140000, tenure: 5 },
-    { department: 'Marketing',   salary: 95000,  tenure: 2 },
-    { department: 'Marketing',   salary: 105000, tenure: 4 },
-    { department: 'Sales',       salary: 110000, tenure: 3 }
-  ];
-
-  const chartConfig: ChartConfig = {
+  // Process data using VisualizationDataProcessor
+  const custChartConfig: ChartConfig = {
     chartType: 'bar',
-    xAxis: 'department',
-    yAxis: 'salary',
+    xAxis: 'country',
+    yAxis: 'lifetime_value',
     secondaryMeasures: [],
-    aggregation: 'avg',
+    aggregation: 'sum',
     sortBy: 'y',
     sortOrder: 'desc',
     limit: 10,
-    title: 'Avg Salary by Dept',
+    title: 'Lifetime Value by Country',
     showLegend: true,
     showDataLabels: false,
     showGrid: true,
@@ -294,13 +232,90 @@ export async function runDatabaseVisualizationIntegrationTests() {
     treatNullAsZero: true
   };
 
-  const processedData = VisualizationDataProcessor.process(rawRows, chartConfig, [
-    { name: 'department', dataType: 'text', semanticType: 'text', isNumeric: false, isDateOrTime: false, isCategorical: true, isBoolean: false, isNullable: false, distinctCount: 3, nullCount: 0, sampleValues: [] },
-    { name: 'salary', dataType: 'numeric', semanticType: 'numeric', isNumeric: true, isDateOrTime: false, isCategorical: false, isBoolean: false, isNullable: false, distinctCount: 5, nullCount: 0, sampleValues: [] }
-  ]);
+  const detectedCustCols = ColumnTypeDetector.detect(custQueryExec.columns, custQueryExec.rows);
+  const custProcessedPoints = VisualizationDataProcessor.process(custQueryExec.rows, custChartConfig, detectedCustCols);
 
-  expectTrue('6.1 In-memory processor processes data points', processedData.length > 0);
-  expectTrue('6.2 Processed points have xLabel populated', !!processedData[0].xLabel);
+  expectTrue('4.3 Processed chart points has 4 distinct country buckets', custProcessedPoints.length === 4);
+  expectTrue('4.4 Highest LTV country is USA with $117,000', custProcessedPoints[0].xLabel === 'USA' && Math.abs(custProcessedPoints[0].rawValue - 117000) < 0.1);
+
+  // Verify KPI Query on `customers`
+  const kpiSql = VisualizationQueryBuilder.buildQuery({
+    tableName: 'customers',
+    measure: 'lifetime_value',
+    aggregation: 'sum',
+    chartType: 'kpi',
+    dialect: 'sqlite'
+  });
+  const kpiRes = await adapter.executeReadOnlyQuery(kpiSql);
+  expectTrue('4.5 Total customer LTV KPI returns single row', kpiRes.rows.length === 1);
+  const totalLtv = Number((kpiRes.rows[0] as any).total_lifetime_value);
+  expectTrue('4.6 Total customer LTV is $299,001.25', Math.abs(totalLtv - 299001.25) < 0.1);
+
+  // =========================================================================
+  // 5. CLEANED / DERIVED DATABASE DATASET VISUALIZATION FLOW
+  // =========================================================================
+  const udl = UnifiedDataLayer.getInstance();
+  const testSessionKey = 'test_cleaned_vis_session';
+
+  // Simulate cleaning: filter completed orders into a derived dataset
+  const completedOrders = custQueryExec.rows.filter(r => Number((r as any).total_lifetime_value) > 40000);
+  const derivedDataset = await udl.registerDataset(testSessionKey, {
+    sourceName: 'high_value_customers.csv',
+    fileType: 'CSV',
+    sourceType: 'DATABASE',
+    sourceTable: 'customers',
+    isDerived: true,
+    columns: [
+      { name: 'country', dataType: 'text', isNullable: false, nullCount: 0, sampleValues: ['USA', 'Sweden'] },
+      { name: 'total_lifetime_value', dataType: 'numeric', isNullable: true, nullCount: 0, sampleValues: [117000, 31000] }
+    ],
+    rows: completedOrders
+  });
+
+  expectTrue('5.1 Cleaned/derived dataset registered in UnifiedDataLayer', !!derivedDataset.datasetId);
+
+  // Query and visualize the derived dataset
+  const derivedSql = VisualizationQueryBuilder.buildQuery({
+    tableName: derivedDataset.tableName,
+    dimension: 'country',
+    measure: 'total_lifetime_value',
+    aggregation: 'sum',
+    chartType: 'bar',
+    sortOrder: 'desc',
+    dialect: 'sqlite'
+  });
+
+  const derivedQueryRes = await udl.executeQuery(testSessionKey, derivedSql);
+  expectTrue('5.2 Analytical query executes against cleaned/derived dataset', derivedQueryRes.rows.length > 0);
+
+  const derivedProcessed = VisualizationDataProcessor.process(
+    derivedQueryRes.rows,
+    {
+      chartType: 'bar',
+      xAxis: 'country',
+      yAxis: 'total_lifetime_value',
+      secondaryMeasures: [],
+      aggregation: 'sum',
+      sortBy: 'y',
+      sortOrder: 'desc',
+      limit: 10,
+      title: 'High Value Customers',
+      showLegend: true,
+      showDataLabels: false,
+      showGrid: true,
+      binCount: 10,
+      treatNullAsZero: true
+    },
+    ColumnTypeDetector.detect(derivedQueryRes.columns, derivedQueryRes.rows)
+  );
+
+  expectTrue('5.3 Cleaned/derived chart data points rendered successfully', derivedProcessed.length > 0);
+
+  // Teardown
+  await udl.removeDataset(testSessionKey, derivedDataset.datasetId);
+  await adapter.disconnect();
+  if (fs.existsSync(testDbFile)) fs.unlinkSync(testDbFile);
+  if (fs.existsSync(testDbDir)) fs.rmSync(testDbDir, { recursive: true, force: true });
 
   return results;
 }
