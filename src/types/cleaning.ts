@@ -447,6 +447,9 @@ export interface CleanedDatasetSaveResult {
   lineage?: {
     sourceDatasetId: string;
     sourceDatasetName: string;
+    sourceType?: 'FILE' | 'DATABASE';
+    sourceSchema?: string;
+    sourceTable?: string;
     pipelineId?: string;
     pipelineName?: string;
     pipelineVersion?: number;

@@ -71,7 +71,8 @@ export class DataQualityService {
       const res = await uds.executeQuery(sessionId, `SELECT COUNT(*) as cnt FROM "${physicalTable}"`);
       return Number(res.rows[0]?.cnt) || 0;
     } else {
-      const adapter = ConnectionManager.getInstance().getAdapter(sessionId);
+      const baseSessionId = sessionId.split(':')[0];
+      const adapter = ConnectionManager.getInstance().getAdapter(baseSessionId);
       if (!adapter) throw new Error('No active database connection');
       const dialect = adapter.getDialect();
       const query = `SELECT COUNT(*) as cnt FROM ${dialect.qualifyTable(schema, table)}`;
@@ -118,7 +119,8 @@ export class DataQualityService {
       }
       return { columns, rows: res.rows };
     } else {
-      const adapter = ConnectionManager.getInstance().getAdapter(sessionId);
+      const baseSessionId = sessionId.split(':')[0];
+      const adapter = ConnectionManager.getInstance().getAdapter(baseSessionId);
       if (!adapter) throw new Error('No active database connection');
       const dialect = adapter.getDialect();
       const query = dialect.formatLimit(`SELECT * FROM ${dialect.qualifyTable(schema, table)}`, limit);

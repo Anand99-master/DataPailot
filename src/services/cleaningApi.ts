@@ -1,6 +1,6 @@
 import { TransformStep, CleaningPreviewResult, CleanedDatasetSaveResult } from '../types/cleaning';
 import { AiCleaningPlan, AiReanalysisResult } from '../types/aiCleaning';
-import { ExportFormat } from '../types/import';
+import { ExportFormat, ImportedDataset } from '../types/import';
 
 export class CleaningApiClient {
   private static workspaceId: string = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_workspace_id')) || 'ws_primary';
@@ -31,6 +31,22 @@ export class CleaningApiClient {
       headers['x-project-id'] = this.projectId;
     }
     return headers;
+  }
+
+  /**
+   * Loads full schema, sample preview rows, and metadata for any cleaning source (imported dataset or database table)
+   */
+  public static async getSourceDetails(sourceId: string): Promise<ImportedDataset> {
+    const res = await fetch(`/api/cleaning/source/${encodeURIComponent(sourceId)}`, {
+      headers: this.getHeaders()
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || data.message || 'Failed to load cleaning source details.');
+    }
+
+    return data.dataset;
   }
 
   /**

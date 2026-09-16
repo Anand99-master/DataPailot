@@ -52,19 +52,33 @@ export class AiCleaningService {
     datasetId: string,
     currentPipeline: TransformStep[] = []
   ): Promise<AiCleaningPlan> {
-    const uds = UnifiedDataLayer.getInstance();
-    const dataset = uds.getDataset(sessionId, datasetId);
-    if (!dataset) {
-      throw new Error(`Dataset '${datasetId}' not found in current session.`);
-    }
+    const source = await DataCleaningService.getSourceInfo(sessionId, datasetId);
+    const dataset: ImportedDataset = {
+      datasetId: source.datasetId,
+      workspaceId: source.workspaceId,
+      projectId: source.projectId,
+      sourceType: source.sourceType,
+      sourceName: source.name,
+      fileType: source.fileType,
+      rowCount: source.totalRows,
+      columns: source.columns,
+      schema: source.schema,
+      name: source.name,
+      tableName: source.tableName,
+      previewRows: source.rows.slice(0, 50),
+      importTimestamp: new Date().toISOString(),
+      status: 'ready',
+      profile: source.profile,
+      sourceDatabaseType: source.sourceDatabaseType,
+      sourceConnectionId: source.sourceConnectionId,
+      sourceSchema: source.sourceSchema,
+      sourceTable: source.sourceTable
+    };
 
     // 1. Get Data Quality Profile
-    const profile = await DataQualityService.profile(
-      sessionId,
-      'imported',
-      dataset.tableName,
-      true
-    );
+    const profile = source.profile || (source.isDatabaseTable
+      ? await DataQualityService.profile(sessionId, source.schema, source.tableName, false)
+      : await DataQualityService.profile(sessionId, 'imported', dataset.tableName, true));
 
     // 2. Sample data distinct values for grounded text/category analysis
     const sampleDistincts = this.extractSampleMetadata(dataset);
@@ -155,19 +169,12 @@ export class AiCleaningService {
     datasetId: string,
     currentPipeline: TransformStep[]
   ): Promise<AiReanalysisResult> {
-    const uds = UnifiedDataLayer.getInstance();
-    const dataset = uds.getDataset(sessionId, datasetId);
-    if (!dataset) {
-      throw new Error(`Dataset '${datasetId}' not found.`);
-    }
+    const source = await DataCleaningService.getSourceInfo(sessionId, datasetId);
 
     // 1. Original Profile
-    const originalProfile = await DataQualityService.profile(
-      sessionId,
-      'imported',
-      dataset.tableName,
-      true
-    );
+    const originalProfile = source.profile || (source.isDatabaseTable
+      ? await DataQualityService.profile(sessionId, source.schema, source.tableName, false)
+      : await DataQualityService.profile(sessionId, 'imported', source.tableName, true));
 
     // 2. Preview pipeline execution to compute actual previewed quality
     const previewResult = await DataCleaningService.previewPipeline(

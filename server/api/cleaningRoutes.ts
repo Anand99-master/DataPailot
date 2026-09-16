@@ -10,6 +10,54 @@ import { ExportFormat } from '../../src/types/import';
 export const cleaningRoutes = Router();
 
 /**
+ * GET /api/cleaning/source/:datasetId
+ * Fetches schema, sample preview rows, and metadata for any cleaning source (imported dataset or database table)
+ */
+cleaningRoutes.get('/source/:datasetId', async (req: Request, res: Response) => {
+  try {
+    const storeKey = getSessionDatasetStoreKey(req, res);
+    const { datasetId } = req.params;
+
+    if (!datasetId) {
+      ApiResponse.error(res, 400, 'MISSING_DATASET_ID', 'datasetId is required.');
+      return;
+    }
+
+    const source = await DataCleaningService.getSourceInfo(storeKey, datasetId);
+
+    const dataset = {
+      datasetId: source.datasetId,
+      workspaceId: source.workspaceId,
+      projectId: source.projectId,
+      sourceType: source.sourceType,
+      sourceName: source.name,
+      fileType: source.fileType,
+      rowCount: source.totalRows,
+      columns: source.columns,
+      schema: source.schema,
+      name: source.name,
+      tableName: source.tableName,
+      previewRows: source.rows.slice(0, 50),
+      importTimestamp: new Date().toISOString(),
+      status: 'ready' as const,
+      profile: source.profile,
+      sourceDatabaseType: source.sourceDatabaseType,
+      sourceConnectionId: source.sourceConnectionId,
+      sourceSchema: source.sourceSchema,
+      sourceTable: source.sourceTable
+    };
+
+    res.json({
+      success: true,
+      dataset
+    });
+  } catch (err: any) {
+    Logger.error('Failed to load cleaning data source', err);
+    ApiResponse.error(res, 404, 'SOURCE_NOT_FOUND', err.message || 'Failed to load cleaning data source.');
+  }
+});
+
+/**
  * POST /api/cleaning/ai/analyze
  * Generates grounded AI recommendations for cleaning and transforming a dataset
  */

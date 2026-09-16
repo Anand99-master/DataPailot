@@ -91,6 +91,14 @@ export class UnifiedDataLayer {
       sheets?: string[];
       selectedSheet?: string;
       workspaceId?: string;
+      projectId?: string;
+      sourceType?: 'FILE' | 'DATABASE';
+      sourceSchema?: string;
+      sourceTable?: string;
+      sourceDatabaseType?: string;
+      sourceConnectionId?: string;
+      isDerived?: boolean;
+      parentDatasetId?: string;
       cancellationToken?: { isCancelled: () => boolean };
       jobId?: string;
       onProgress?: (progress: { rowsProcessed: number; totalRows: number; percent: number }) => void;
@@ -205,7 +213,8 @@ export class UnifiedDataLayer {
     const dataset: ImportedDataset = {
       datasetId,
       workspaceId: params.workspaceId,
-      sourceType: 'FILE',
+      projectId: params.projectId,
+      sourceType: params.sourceType || 'FILE',
       sourceName: params.sourceName,
       fileType: params.fileType,
       rowCount: params.rows.length,
@@ -219,7 +228,13 @@ export class UnifiedDataLayer {
       sheets: params.sheets,
       selectedSheet: params.selectedSheet,
       fileSize: params.fileSize,
-      profile
+      profile,
+      sourceDatabaseType: params.sourceDatabaseType,
+      sourceConnectionId: params.sourceConnectionId,
+      sourceSchema: params.sourceSchema,
+      sourceTable: params.sourceTable,
+      isDerived: params.isDerived,
+      parentDatasetId: params.parentDatasetId
     };
 
     store.datasets.set(datasetId, dataset);

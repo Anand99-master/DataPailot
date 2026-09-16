@@ -110,7 +110,15 @@ export const SaveCleanedDatasetModal: React.FC<SaveCleanedDatasetModalProps> = (
             <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
             <div>
               <span className="font-semibold block text-emerald-300">Non-Destructive Guarantee</span>
-              Original dataset <strong className="font-mono text-white">"{dataset.name}"</strong> will remain 100% untouched. A brand new versioned dataset will be created.
+              {dataset.sourceType === 'DATABASE' ? (
+                <>
+                  Source database table <strong className="font-mono text-white">{dataset.sourceSchema ? `${dataset.sourceSchema}.${dataset.name}` : dataset.name}</strong> (Read-Only) will remain 100% untouched. A brand new versioned dataset will be created in the Unified Data Layer.
+                </>
+              ) : (
+                <>
+                  Original dataset <strong className="font-mono text-white">"{dataset.name}"</strong> will remain 100% untouched. A brand new versioned dataset will be created.
+                </>
+              )}
             </div>
           </div>
 
@@ -131,15 +139,23 @@ export const SaveCleanedDatasetModal: React.FC<SaveCleanedDatasetModalProps> = (
             <div className="space-y-3">
               <div className="p-3 rounded-lg bg-slate-950/50 border border-slate-800 text-xs text-slate-400 space-y-1">
                 <div className="flex justify-between">
-                  <span>Source Dataset:</span>
-                  <span className="font-mono text-white">{dataset.name}</span>
+                  <span>Source {dataset.sourceType === 'DATABASE' ? 'Table' : 'Dataset'}:</span>
+                  <span className="font-mono text-white">
+                    {dataset.sourceType === 'DATABASE' && dataset.sourceSchema ? `${dataset.sourceSchema}.${dataset.name}` : dataset.name}
+                  </span>
                 </div>
+                {dataset.sourceType === 'DATABASE' && (
+                  <div className="flex justify-between">
+                    <span>Source Type:</span>
+                    <span className="font-mono text-emerald-400">Connected Database Table (Read-Only)</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>Active Cleaning Steps:</span>
                   <span className="font-mono text-indigo-400">{pipeline.filter(s => s.enabled).length} steps</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Storage Engine:</span>
+                  <span>Target Storage:</span>
                   <span className="font-mono text-slate-300">Unified SQLite Data Layer</span>
                 </div>
               </div>

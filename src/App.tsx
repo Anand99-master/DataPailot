@@ -1100,6 +1100,9 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
               <DataCleaningWorkspace
                 dataset={activeDataset}
                 allDatasets={importedDatasets}
+                tables={tables}
+                selectedTable={selectedTable}
+                connection={connection}
                 onSelectDataset={ds => {
                   setActiveDatasetId(ds.datasetId);
                   handleSelectTable({
@@ -1109,9 +1112,13 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
                     approximateRowCount: ds.rowCount
                   });
                 }}
-                onDatasetCreated={newDs => {
+                onSelectTable={table => {
+                  handleSelectTable(table);
+                }}
+                onDatasetCreated={async newDs => {
                   setImportedDatasets(prev => [newDs, ...prev]);
                   setActiveDatasetId(newDs.datasetId);
+                  await loadTables();
                   handleSelectTable({
                     schema: 'imported',
                     name: newDs.tableName,
@@ -1120,6 +1127,7 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
                   });
                 }}
                 onOpenImportModal={() => setIsImportModalOpen(true)}
+                onOpenConnectModal={() => setIsConnectModalOpen(true)}
               />
             ) : activeWorkspaceView === 'reports' ? (
               <ReportsWorkspace />

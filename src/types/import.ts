@@ -112,6 +112,7 @@ export interface DataPreview {
 export interface ImportedDataset {
   datasetId: string;
   workspaceId?: string;
+  projectId?: string;
   sourceType: DataSourceType;
   sourceName: string;
   fileType: FileType;
@@ -128,6 +129,12 @@ export interface ImportedDataset {
   fileSize?: number;
   profile?: DataProfile;
   error?: string;
+  sourceDatabaseType?: string;
+  sourceConnectionId?: string;
+  sourceSchema?: string;
+  sourceTable?: string;
+  isDerived?: boolean;
+  parentDatasetId?: string;
 }
 
 export interface DataSource {

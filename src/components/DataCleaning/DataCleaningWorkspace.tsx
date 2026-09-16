@@ -27,10 +27,16 @@ import {
   Table2,
   FileText,
   FileSpreadsheet,
-  Code
+  Code,
+  Search,
+  ArrowRight,
+  Plug,
+  Loader2,
+  Lock
 } from 'lucide-react';
 import { ImportedDataset, ExportFormat } from '../../types/import';
 import { TransformStep, CleaningPreviewResult, CleaningTabId } from '../../types/cleaning';
+import { DiscoveredTable, SanitizedConnectionInfo } from '../../types/database';
 import { CleaningApiClient } from '../../services/cleaningApi';
 import { CleaningOverviewTab } from './tabs/CleaningOverviewTab';
 import { AiCleaningAssistantTab } from './tabs/AiCleaningAssistantTab';
@@ -56,9 +62,14 @@ import { SaveCleanedDatasetModal } from './SaveCleanedDatasetModal';
 interface DataCleaningWorkspaceProps {
   dataset: ImportedDataset | null;
   allDatasets: ImportedDataset[];
+  tables?: DiscoveredTable[];
+  selectedTable?: DiscoveredTable | null;
+  connection?: SanitizedConnectionInfo | null;
   onSelectDataset: (dataset: ImportedDataset) => void;
+  onSelectTable?: (table: DiscoveredTable) => void;
   onDatasetCreated?: (newDataset: ImportedDataset) => void;
   onOpenImportModal?: () => void;
+  onOpenConnectModal?: () => void;
   onBrowseSampleDatasets?: () => void;
   onLearnMore?: () => void;
 }
@@ -66,20 +77,80 @@ interface DataCleaningWorkspaceProps {
 export const DataCleaningWorkspace: React.FC<DataCleaningWorkspaceProps> = ({
   dataset,
   allDatasets,
+  tables = [],
+  selectedTable,
+  connection,
   onSelectDataset,
+  onSelectTable,
   onDatasetCreated,
   onOpenImportModal,
+  onOpenConnectModal,
   onBrowseSampleDatasets,
   onLearnMore
 }) => {
+  const [activeSource, setActiveSource] = useState<ImportedDataset | null>(dataset);
   const [activeTab, setActiveTab] = useState<CleaningTabId>('overview');
   const [pipeline, setPipeline] = useState<TransformStep[]>([]);
   const [undoStack, setUndoStack] = useState<TransformStep[][]>([]);
   const [redoStack, setRedoStack] = useState<TransformStep[][]>([]);
   const [preview, setPreview] = useState<CleaningPreviewResult | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [isLoadingSource, setIsLoadingSource] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [tableSearchTerm, setTableSearchTerm] = useState('');
+  const [sourceTypeFilter, setSourceTypeFilter] = useState<'all' | 'imported' | 'database'>('all');
+
+  // Filter actual database tables (excluding 'imported' schema)
+  const databaseTables = tables.filter(t => t.schema !== 'imported');
+
+  // Sync activeSource when dataset prop changes
+  useEffect(() => {
+    if (dataset) {
+      setActiveSource(dataset);
+    }
+  }, [dataset]);
+
+  // Load database table as cleaning source
+  const handleSelectDatabaseTable = async (table: DiscoveredTable) => {
+    setIsLoadingSource(true);
+    setStatusMessage(null);
+    try {
+      const sourceId = `db:${table.schema}:${table.name}`;
+      const sourceDetails = await CleaningApiClient.getSourceDetails(sourceId);
+      setActiveSource(sourceDetails);
+      setPipeline([]);
+      setPreview(null);
+      setUndoStack([]);
+      setRedoStack([]);
+      setActiveTab('overview');
+      if (onSelectTable) {
+        onSelectTable(table);
+      }
+      setStatusMessage({
+        type: 'info',
+        text: `Loaded database table "${table.schema}.${table.name}" for non-destructive cleaning.`
+      });
+    } catch (err: any) {
+      setStatusMessage({
+        type: 'error',
+        text: err.message || `Failed to load database table "${table.schema}.${table.name}".`
+      });
+    } finally {
+      setIsLoadingSource(false);
+    }
+  };
+
+  // Switch to an imported dataset
+  const handleSelectImportedDataset = (ds: ImportedDataset) => {
+    setActiveSource(ds);
+    setPipeline([]);
+    setPreview(null);
+    setUndoStack([]);
+    setRedoStack([]);
+    setActiveTab('overview');
+    onSelectDataset(ds);
+  };
 
   // Auto-clear message after 5s
   useEffect(() => {
@@ -184,15 +255,15 @@ export const DataCleaningWorkspace: React.FC<DataCleaningWorkspaceProps> = ({
 
   // Run preview on backend
   const handleRunPreview = async () => {
-    if (!dataset) return;
+    if (!activeSource) return;
     setIsLoadingPreview(true);
     setStatusMessage(null);
     try {
-      const res = await CleaningApiClient.previewPipeline(dataset.datasetId, pipeline);
+      const res = await CleaningApiClient.previewPipeline(activeSource.datasetId, pipeline);
       setPreview(res);
       setStatusMessage({
         type: 'success',
-        text: `Preview generated: ${res.affectedRowCount} rows affected, DQ score ${res.qualityBefore?.overallQualityScore} → ${res.qualityAfter?.overallQualityScore}.`
+        text: `Preview generated: ${res.affectedRowCount} rows affected, DQ score ${res.qualityBefore?.overallQualityScore || 100} → ${res.qualityAfter?.overallQualityScore || 100}.`
       });
       setActiveTab('preview');
     } catch (err: any) {
@@ -204,8 +275,8 @@ export const DataCleaningWorkspace: React.FC<DataCleaningWorkspaceProps> = ({
 
   // Save cleaned dataset
   const handleSaveCleaned = async (newName: string) => {
-    if (!dataset) return;
-    const res = await CleaningApiClient.saveCleanedDataset(dataset.datasetId, newName, pipeline);
+    if (!activeSource) return;
+    const res = await CleaningApiClient.saveCleanedDataset(activeSource.datasetId, newName, pipeline);
     setStatusMessage({
       type: 'success',
       text: res.message || `Cleaned dataset "${newName}" created successfully!`
@@ -217,121 +288,266 @@ export const DataCleaningWorkspace: React.FC<DataCleaningWorkspaceProps> = ({
 
   // Export cleaned data
   const handleExportCleaned = async (format: ExportFormat, customName?: string) => {
-    if (!dataset) return;
-    await CleaningApiClient.exportCleanedData(dataset.datasetId, pipeline, format, customName);
+    if (!activeSource) return;
+    await CleaningApiClient.exportCleanedData(activeSource.datasetId, pipeline, format, customName);
     setStatusMessage({ type: 'success', text: `Exported cleaned dataset in .${format.toUpperCase()} format.` });
   };
 
-  if (!dataset) {
+  // Filtered tables for empty state selector
+  const filteredDatabaseTables = databaseTables.filter(t =>
+    t.name.toLowerCase().includes(tableSearchTerm.toLowerCase()) ||
+    t.schema.toLowerCase().includes(tableSearchTerm.toLowerCase())
+  );
+
+  // If loading source metadata
+  if (isLoadingSource) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 text-center bg-slate-950 overflow-y-auto">
-        <div className="max-w-2xl w-full mx-auto flex flex-col items-center">
-          {/* Database / empty-state icon */}
-          <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mb-5 text-indigo-400 shadow-inner">
-            <Database className="w-8 h-8" />
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-950 text-center">
+        <Loader2 className="w-10 h-10 text-indigo-400 animate-spin mb-4" />
+        <h4 className="text-base font-semibold text-white">Loading Data Source Schema...</h4>
+        <p className="text-xs text-slate-400 mt-1">Inspecting columns, generating data quality profile, and preparing non-destructive working copy.</p>
+      </div>
+    );
+  }
+
+  // If no dataset or database table is actively loaded, display the comprehensive Source Selection View
+  if (!activeSource) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-start p-6 md:p-10 bg-slate-950 overflow-y-auto">
+        <div className="max-w-5xl w-full mx-auto flex flex-col items-center text-center">
+          {/* Main header */}
+          <div className="w-14 h-14 rounded-2xl bg-indigo-950/40 border border-indigo-800/60 flex items-center justify-center mb-4 text-indigo-400 shadow-lg">
+            <Sparkles className="w-7 h-7" />
           </div>
 
-          <h3 className="text-xl font-bold text-white tracking-tight">No Dataset Selected for Cleaning</h3>
-          <p className="text-sm text-slate-400 mt-2 max-w-lg leading-relaxed">
-            Please import a CSV, Excel, or JSON dataset or choose an active dataset below to launch the Data Cleaning Workspace.
+          <h3 className="text-2xl font-bold text-white tracking-tight">Select a Data Source for Cleaning</h3>
+          <p className="text-sm text-slate-400 mt-2 max-w-2xl leading-relaxed">
+            Choose an imported file dataset or select a table from your connected database. All cleaning transformations are strictly non-destructive and preserve your source data.
           </p>
 
-          {/* Active datasets selector if any exist */}
-          {allDatasets.length > 0 && (
-            <div className="mt-6 w-full max-w-md bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 text-left">
-              <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider block mb-2">
-                Active Workspace Datasets ({allDatasets.length})
-              </span>
-              <div className="flex flex-col gap-2 max-h-36 overflow-y-auto pr-1">
-                {allDatasets.map(d => (
-                  <button
-                    key={d.datasetId}
-                    type="button"
-                    onClick={() => onSelectDataset(d)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-750 text-xs font-mono text-slate-200 transition-colors flex items-center justify-between text-left group"
-                  >
-                    <span className="truncate group-hover:text-white font-medium">{d.name}</span>
-                    <span className="text-[10px] text-slate-400 font-sans">{d.rowCount} rows</span>
-                  </button>
-                ))}
+          {/* Two-Column Grid: Imported Datasets vs Connected Database Tables */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8 w-full text-left">
+            {/* Column 1: Imported File Datasets */}
+            <div className="flex flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-6 shadow-md">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center space-x-2.5">
+                  <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                    <FileSpreadsheet className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-white">Imported Datasets</h4>
+                    <p className="text-[11px] text-slate-400">CSV, Excel, or JSON files in workspace</p>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-800 text-slate-300 border border-slate-700">
+                  {allDatasets.length} available
+                </span>
+              </div>
+
+              {/* Existing Imported Datasets List */}
+              {allDatasets.length > 0 ? (
+                <div className="mt-4 flex-1 flex flex-col">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                    Available Workspace Datasets
+                  </span>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {allDatasets.map(d => (
+                      <div
+                        key={d.datasetId}
+                        className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-indigo-500/50 transition-all flex items-center justify-between group"
+                      >
+                        <div className="min-w-0 flex-1 pr-3">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs font-mono font-medium text-white truncate">{d.name}</span>
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-slate-800 text-slate-300">
+                              {d.fileType}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-slate-400 block mt-0.5">
+                            {d.rowCount?.toLocaleString()} rows • {d.columns?.length} columns
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectImportedDataset(d)}
+                          className="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 border border-indigo-500/40 text-xs font-medium text-indigo-300 hover:text-white transition-colors flex items-center space-x-1"
+                        >
+                          <span>Clean</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="my-6 p-4 rounded-xl bg-slate-950/40 border border-slate-800/80 text-center">
+                  <p className="text-xs text-slate-400">No imported datasets yet in this workspace.</p>
+                </div>
+              )}
+
+              {/* Import Action Buttons */}
+              <div className="mt-5 pt-4 border-t border-slate-800 grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => onOpenImportModal?.()}
+                  className="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-center transition-colors flex flex-col items-center group"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-400 mb-1 group-hover:scale-110 transition-transform" />
+                  <span className="text-[11px] font-medium text-slate-200">Import CSV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenImportModal?.()}
+                  className="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-center transition-colors flex flex-col items-center group"
+                >
+                  <FileText className="w-4 h-4 text-blue-400 mb-1 group-hover:scale-110 transition-transform" />
+                  <span className="text-[11px] font-medium text-slate-200">Import Excel</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenImportModal?.()}
+                  className="p-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-center transition-colors flex flex-col items-center group"
+                >
+                  <Code className="w-4 h-4 text-purple-400 mb-1 group-hover:scale-110 transition-transform" />
+                  <span className="text-[11px] font-medium text-slate-200">Import JSON</span>
+                </button>
+              </div>
+
+              {/* Sample datasets trigger */}
+              <div className="mt-3 text-center">
+                <button
+                  type="button"
+                  onClick={() => onBrowseSampleDatasets ? onBrowseSampleDatasets() : onOpenImportModal?.()}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors inline-flex items-center space-x-1"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Browse Sample Clean/Messy Datasets</span>
+                </button>
               </div>
             </div>
-          )}
 
-          {/* Three clearly separated import cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-8 w-full max-w-xl">
-            {/* Import CSV */}
-            <button
-              type="button"
-              onClick={() => onOpenImportModal?.()}
-              aria-label="Import CSV dataset"
-              className="group p-5 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-800 hover:border-emerald-500/50 text-center transition-all duration-200 flex flex-col items-center cursor-pointer shadow-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-500/50"
-            >
-              <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-3 group-hover:scale-105 transition-transform">
-                <FileSpreadsheet className="w-5 h-5" />
+            {/* Column 2: Connected Database Tables */}
+            <div className="flex flex-col bg-slate-900/70 border border-slate-800 rounded-2xl p-6 shadow-md">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center space-x-2.5">
+                  <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-white">Database Tables</h4>
+                    <p className="text-[11px] text-slate-400">Connected SQL database tables</p>
+                  </div>
+                </div>
+                {connection?.isConnected ? (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-emerald-950/60 text-emerald-400 border border-emerald-900/50 flex items-center space-x-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
+                    <span>{connection.type.toUpperCase()} Connected</span>
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                    Not Connected
+                  </span>
+                )}
               </div>
-              <span className="text-xs font-semibold text-white tracking-wide">Import CSV</span>
-              <span className="text-[11px] text-slate-400 mt-1">Comma-separated values</span>
-            </button>
 
-            {/* Import Excel */}
-            <button
-              type="button"
-              onClick={() => onOpenImportModal?.()}
-              aria-label="Import Excel dataset"
-              className="group p-5 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-800 hover:border-blue-500/50 text-center transition-all duration-200 flex flex-col items-center cursor-pointer shadow-xs focus:outline-hidden focus:ring-2 focus:ring-blue-500/50"
-            >
-              <div className="w-10 h-10 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 mb-3 group-hover:scale-105 transition-transform">
-                <FileText className="w-5 h-5" />
-              </div>
-              <span className="text-xs font-semibold text-white tracking-wide">Import Excel</span>
-              <span className="text-[11px] text-slate-400 mt-1">XLSX / XLS sheets</span>
-            </button>
+              {/* If Database is Connected */}
+              {connection?.isConnected ? (
+                <div className="mt-4 flex-1 flex flex-col">
+                  {/* Table Search */}
+                  <div className="relative mb-2">
+                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      value={tableSearchTerm}
+                      onChange={e => setTableSearchTerm(e.target.value)}
+                      placeholder="Search database tables..."
+                      className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-indigo-500"
+                    />
+                  </div>
 
-            {/* Import JSON */}
-            <button
-              type="button"
-              onClick={() => onOpenImportModal?.()}
-              aria-label="Import JSON dataset"
-              className="group p-5 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-800 hover:border-purple-500/50 text-center transition-all duration-200 flex flex-col items-center cursor-pointer shadow-xs focus:outline-hidden focus:ring-2 focus:ring-purple-500/50"
-            >
-              <div className="w-10 h-10 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 mb-3 group-hover:scale-105 transition-transform">
-                <Code className="w-5 h-5" />
-              </div>
-              <span className="text-xs font-semibold text-white tracking-wide">Import JSON</span>
-              <span className="text-[11px] text-slate-400 mt-1">Structured documents</span>
-            </button>
+                  {/* Database Tables List */}
+                  {filteredDatabaseTables.length > 0 ? (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {filteredDatabaseTables.map(t => (
+                        <div
+                          key={`${t.schema}.${t.name}`}
+                          className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-blue-500/50 transition-all flex items-center justify-between group"
+                        >
+                          <div className="min-w-0 flex-1 pr-3">
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xs font-mono font-medium text-white truncate">
+                                {t.schema !== 'public' ? `${t.schema}.${t.name}` : t.name}
+                              </span>
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-blue-950/60 text-blue-300 border border-blue-900/40">
+                                {t.type}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-slate-400 block mt-0.5">
+                              ~{t.approximateRowCount?.toLocaleString() || 0} rows • Read-Only Source
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectDatabaseTable(t)}
+                            className="px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 border border-blue-500/40 text-xs font-medium text-blue-300 hover:text-white transition-colors flex items-center space-x-1"
+                          >
+                            <span>Clean Table</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="my-6 p-4 rounded-xl bg-slate-950/40 border border-slate-800/80 text-center">
+                      <p className="text-xs text-slate-400">No database tables match your search.</p>
+                    </div>
+                  )}
+
+                  {/* Database Read-Only Guard Info */}
+                  <div className="mt-4 p-3 rounded-xl bg-slate-950/50 border border-slate-800 flex items-start space-x-2 text-[11px] text-slate-400">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-slate-200">Database Guard Active:</strong> Cleaning operates safely in a session copy. Your real database tables remain 100% read-only and will never be modified.
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* If NO database is connected */
+                <div className="mt-4 flex-1 flex flex-col justify-between">
+                  <div className="p-5 rounded-xl bg-slate-950/50 border border-slate-800/80 text-center my-auto">
+                    <Plug className="w-8 h-8 text-slate-500 mx-auto mb-2" />
+                    <h5 className="text-xs font-semibold text-white">No Database Connected</h5>
+                    <p className="text-[11px] text-slate-400 mt-1 max-w-xs mx-auto">
+                      Connect PostgreSQL, MySQL, SQLite, Oracle, or SQL Server to clean and transform database tables non-destructively.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => onOpenConnectModal?.()}
+                      className="mt-4 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition-colors inline-flex items-center space-x-1.5 shadow-xs"
+                    >
+                      <Plug className="w-3.5 h-3.5" />
+                      <span>Connect Database</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Secondary Action & Informational Link */}
-          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4 w-full">
-            <button
-              type="button"
-              onClick={() => {
-                if (onBrowseSampleDatasets) {
-                  onBrowseSampleDatasets();
-                } else if (onOpenImportModal) {
-                  onOpenImportModal();
-                }
-              }}
-              className="px-4 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-750 text-xs font-medium text-slate-300 hover:text-white transition-colors flex items-center space-x-2"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Browse Sample Datasets</span>
-            </button>
-
+          {/* Footer Informational Link */}
+          <div className="mt-8 text-center">
             <button
               type="button"
               onClick={() => {
                 if (onLearnMore) {
                   onLearnMore();
                 } else {
-                  alert('DataPilot Data Cleaning Workspace provides robust non-destructive pipeline transformations, automated missing value imputation, text normalization, type casting, outlier filtering, and custom calculated columns.');
+                  alert('DataPilot Data Cleaning Workspace provides robust non-destructive pipeline transformations, automated missing value imputation, text normalization, type casting, outlier filtering, calculated columns, and Gemini AI auto-cleaning recommendations for both file datasets and connected SQL databases.');
                 }
               }}
               className="text-xs text-slate-400 hover:text-cyan-300 underline underline-offset-4 transition-colors"
             >
-              Learn more about data cleaning
+              Learn more about non-destructive data cleaning & transformation pipelines
             </button>
           </div>
         </div>
@@ -367,37 +583,81 @@ export const DataCleaningWorkspace: React.FC<DataCleaningWorkspaceProps> = ({
     <div className="flex-1 flex flex-col h-full bg-slate-950 text-slate-200 overflow-hidden">
       {/* Top Header Bar */}
       <div className="p-4 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
-        {/* Left: Dataset info and status indicators */}
+        {/* Left: Source switcher and status indicators */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center space-x-2">
             <Sparkles className="w-5 h-5 text-indigo-400" />
             <span className="font-semibold text-white text-sm">Data Cleaning & Transformation</span>
           </div>
 
-          {/* Dataset Selector Dropdown */}
-          <select
-            value={dataset.datasetId}
-            onChange={e => {
-              const selected = allDatasets.find(d => d.datasetId === e.target.value);
-              if (selected) {
-                onSelectDataset(selected);
+          {/* Source Selector (Imported Datasets & Database Tables) */}
+          <div className="flex items-center space-x-1.5">
+            <select
+              value={activeSource.datasetId}
+              onChange={e => {
+                const val = e.target.value;
+                if (val.startsWith('db:')) {
+                  const parts = val.replace(/^db:/, '').split(':');
+                  const foundTable = databaseTables.find(t => t.schema === parts[0] && t.name === parts[1]);
+                  if (foundTable) {
+                    handleSelectDatabaseTable(foundTable);
+                  }
+                } else {
+                  const foundDs = allDatasets.find(d => d.datasetId === val);
+                  if (foundDs) {
+                    handleSelectImportedDataset(foundDs);
+                  }
+                }
+              }}
+              className="px-3 py-1 rounded-lg bg-slate-950 border border-slate-750 text-xs font-mono text-slate-200 focus:outline-hidden focus:border-indigo-500"
+            >
+              {allDatasets.length > 0 && (
+                <optgroup label="Imported Datasets">
+                  {allDatasets.map(d => (
+                    <option key={d.datasetId} value={d.datasetId}>
+                      [Imported] {d.name} ({d.rowCount} rows)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {databaseTables.length > 0 && (
+                <optgroup label="Connected Database Tables">
+                  {databaseTables.map(t => (
+                    <option key={`db:${t.schema}:${t.name}`} value={`db:${t.schema}:${t.name}`}>
+                      [DB] {t.schema !== 'public' ? `${t.schema}.${t.name}` : t.name} (~{t.approximateRowCount || 0} rows)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+
+            {/* Quick Switch / Change Source Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSource(null);
                 setPipeline([]);
                 setPreview(null);
-              }
-            }}
-            className="px-3 py-1 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-slate-200 focus:outline-hidden"
-          >
-            {allDatasets.map(d => (
-              <option key={d.datasetId} value={d.datasetId}>
-                {d.name} ({d.rowCount} rows, {d.columns.length} cols)
-              </option>
-            ))}
-          </select>
+              }}
+              className="px-2 py-1 rounded text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors"
+              title="Select another dataset or database table"
+            >
+              Switch Source
+            </button>
+          </div>
 
           {/* Non-destructive guarantee badges */}
-          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
-            Original: Read-Only
-          </span>
+          {activeSource.sourceType === 'DATABASE' ? (
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-950/60 text-blue-300 border border-blue-900/50 flex items-center space-x-1">
+              <Lock className="w-2.5 h-2.5" />
+              <span>DB Source: Read-Only Protected</span>
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+              Imported File: Read-Only
+            </span>
+          )}
 
           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-950/60 text-indigo-300 border border-indigo-900/50">
             Working Copy: {pipeline.length > 0 ? `${activeStepsCount} rules configured` : 'Clean'}
@@ -458,173 +718,229 @@ export const DataCleaningWorkspace: React.FC<DataCleaningWorkspaceProps> = ({
       {/* Notification status bar */}
       {statusMessage && (
         <div
-          className={`px-4 py-2 text-xs flex items-center justify-between border-b ${
+          className={`px-4 py-2 text-xs flex items-center justify-between transition-colors border-b ${
             statusMessage.type === 'success'
-              ? 'bg-emerald-950/80 border-emerald-900 text-emerald-200'
+              ? 'bg-emerald-950/80 border-emerald-800 text-emerald-300'
               : statusMessage.type === 'error'
-              ? 'bg-rose-950/80 border-rose-900 text-rose-200'
-              : 'bg-indigo-950/80 border-indigo-900 text-indigo-200'
+              ? 'bg-rose-950/80 border-rose-800 text-rose-300'
+              : 'bg-indigo-950/80 border-indigo-800 text-indigo-300'
           }`}
         >
           <div className="flex items-center space-x-2">
             {statusMessage.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
             ) : statusMessage.type === 'error' ? (
-              <AlertTriangle className="w-4 h-4 text-rose-400" />
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
             ) : (
-              <Sparkles className="w-4 h-4 text-indigo-400" />
+              <Sparkles className="w-4 h-4 flex-shrink-0" />
             )}
             <span>{statusMessage.text}</span>
           </div>
-          <button onClick={() => setStatusMessage(null)} className="text-slate-400 hover:text-white">
-            ×
+          <button
+            onClick={() => setStatusMessage(null)}
+            className="text-[11px] underline hover:no-underline ml-4 opacity-80 hover:opacity-100"
+          >
+            Dismiss
           </button>
         </div>
       )}
 
-      {/* Sub-Navigation Tabs */}
-      <div className="flex items-center border-b border-slate-800 bg-slate-900/40 px-4 overflow-x-auto no-scrollbar">
-        {tabs.map(tab => {
-          const isActive = activeTab === tab.id;
-          return (
+      {/* Main Workspace Body */}
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+        {/* Left Vertical Sub-Tab Navigation */}
+        <div className="w-full md:w-56 bg-slate-900/50 border-r border-slate-800 flex flex-row md:flex-col overflow-x-auto md:overflow-y-auto p-2 gap-1 flex-shrink-0">
+          {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`py-3 px-3.5 text-xs font-medium flex items-center space-x-2 border-b-2 whitespace-nowrap transition-colors ${
-                isActive
-                  ? 'border-indigo-500 text-white font-semibold'
-                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
+              className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap md:whitespace-normal ${
+                activeTab === tab.id
+                  ? 'bg-indigo-600 text-white shadow-xs font-semibold'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
               }`}
             >
-              <span>{tab.icon}</span>
-              <span>{tab.label}</span>
-              {typeof tab.badge === 'number' && tab.badge > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-indigo-600 text-white">
+              <div className="flex items-center space-x-2.5">
+                {tab.icon}
+                <span>{tab.label}</span>
+              </div>
+              {tab.badge !== undefined && tab.badge > 0 && (
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    activeTab === tab.id
+                      ? 'bg-indigo-800 text-indigo-100'
+                      : 'bg-indigo-950 text-indigo-300 border border-indigo-800/60'
+                  }`}
+                >
                   {tab.badge}
                 </span>
               )}
             </button>
-          );
-        })}
+          ))}
+        </div>
+
+        {/* Tab Content Panel */}
+        <div className="flex-1 flex flex-col overflow-y-auto p-4 md:p-6 bg-slate-950">
+          {activeTab === 'overview' && (
+            <CleaningOverviewTab
+              dataset={activeSource}
+              pipeline={pipeline}
+              preview={preview}
+              onAddQuickStep={handleAddStep}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'ai-assistant' && (
+            <AiCleaningAssistantTab
+              dataset={activeSource}
+              pipeline={pipeline}
+              onAddStep={handleAddStep}
+              onAddMultipleSteps={handleAddMultipleSteps}
+              onNavigateToPipeline={() => setActiveTab('pipeline')}
+            />
+          )}
+
+          {activeTab === 'columns' && (
+            <ColumnOperationsTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'calculated' && (
+            <CalculatedColumnTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'conditional' && (
+            <ConditionalColumnTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'filter' && (
+            <RowFilterTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'sort-rank' && (
+            <SortRankTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'date-transforms' && (
+            <DateTransformationsTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'pivot-unpivot' && (
+            <PivotUnpivotTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'missing' && (
+            <MissingValuesTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'duplicates' && (
+            <DuplicatesTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'types' && (
+            <DataTypesTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'dates' && (
+            <DateStandardizationTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'text' && (
+            <TextCleaningTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'numeric' && (
+            <NumericCleaningTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'mapping' && (
+            <ValueMappingTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'outliers' && (
+            <OutliersTab
+              dataset={activeSource}
+              onAddStep={handleAddStep}
+            />
+          )}
+
+          {activeTab === 'pipeline' && (
+            <PipelineTab
+              dataset={activeSource}
+              pipeline={pipeline}
+              preview={preview}
+              onUpdatePipeline={handleUpdatePipeline}
+              onToggleStep={handleToggleStep}
+              onRemoveStep={handleRemoveStep}
+              onMoveStep={handleMoveStep}
+              onDuplicateStep={handleDuplicateStep}
+              onEditStep={handleEditStep}
+              onClearAll={handleClearAll}
+              onPreview={handleRunPreview}
+              onUndo={handleUndo}
+              onRedo={handleRedo}
+              canUndo={undoStack.length > 0}
+              canRedo={redoStack.length > 0}
+              isLoadingPreview={isLoadingPreview}
+            />
+          )}
+
+          {activeTab === 'preview' && (
+            <PreviewDiffTab
+              dataset={activeSource}
+              preview={preview}
+              onRunPreview={handleRunPreview}
+              isLoading={isLoadingPreview}
+            />
+          )}
+        </div>
       </div>
 
-      {/* Main Workspace Body */}
-      <div className="flex-1 overflow-y-auto p-6">
-        {activeTab === 'overview' && (
-          <CleaningOverviewTab
-            dataset={dataset}
-            pipeline={pipeline}
-            preview={preview}
-            onAddQuickStep={handleAddStep}
-            onNavigateTab={tabId => setActiveTab(tabId as CleaningTabId)}
-          />
-        )}
-
-        {activeTab === 'ai-assistant' && (
-          <AiCleaningAssistantTab
-            dataset={dataset}
-            pipeline={pipeline}
-            onAddStep={handleAddStep}
-            onAddMultipleSteps={handleAddMultipleSteps}
-            onNavigateToPipeline={() => setActiveTab('pipeline')}
-          />
-        )}
-
-        {activeTab === 'columns' && (
-          <ColumnOperationsTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'calculated' && (
-          <CalculatedColumnTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'conditional' && (
-          <ConditionalColumnTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'filter' && (
-          <RowFilterTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'sort-rank' && (
-          <SortRankTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'date-transforms' && (
-          <DateTransformationsTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'pivot-unpivot' && (
-          <PivotUnpivotTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'missing' && (
-          <MissingValuesTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'duplicates' && (
-          <DuplicatesTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'types' && (
-          <DataTypesTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'dates' && (
-          <DateStandardizationTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'text' && (
-          <TextCleaningTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'numeric' && (
-          <NumericCleaningTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'mapping' && (
-          <ValueMappingTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'outliers' && (
-          <OutliersTab dataset={dataset} onAddStep={handleAddStep} />
-        )}
-
-        {activeTab === 'pipeline' && (
-          <PipelineTab
-            dataset={dataset}
-            pipeline={pipeline}
-            preview={preview}
-            onUpdatePipeline={handleUpdatePipeline}
-            onToggleStep={handleToggleStep}
-            onRemoveStep={handleRemoveStep}
-            onMoveStep={handleMoveStep}
-            onDuplicateStep={handleDuplicateStep}
-            onEditStep={handleEditStep}
-            onClearAll={handleClearAll}
-            onPreview={handleRunPreview}
-            onUndo={handleUndo}
-            onRedo={handleRedo}
-            canUndo={undoStack.length > 0}
-            canRedo={redoStack.length > 0}
-            isLoadingPreview={isLoadingPreview}
-          />
-        )}
-
-        {activeTab === 'preview' && (
-          <PreviewDiffTab
-            dataset={dataset}
-            preview={preview}
-            onRunPreview={handleRunPreview}
-            isLoading={isLoadingPreview}
-          />
-        )}
-      </div>
-
-      {/* Save / Export Modal */}
+      {/* Save Cleaned Dataset Modal */}
       {showSaveModal && (
         <SaveCleanedDatasetModal
-          dataset={dataset}
+          dataset={activeSource}
           pipeline={pipeline}
           onClose={() => setShowSaveModal(false)}
           onSave={handleSaveCleaned}
