@@ -3,6 +3,7 @@ import { X, BookmarkPlus, Layers, CheckCircle2, History, Database } from 'lucide
 import { TransformStep, SavedPipeline } from '../../../types/cleaning';
 import { PipelineValidator } from '../../../utils/pipelineValidator';
 import { PipelineStorage } from '../../../utils/pipelineStorage';
+import { CollaborationApiClient } from '../../../services/collaborationApi';
 
 interface SavePipelineModalProps {
   currentPipeline: TransformStep[];
@@ -44,6 +45,14 @@ export const SavePipelineModal: React.FC<SavePipelineModalProps> = ({
         sourceDatasetName,
         createNewVersion: isEditingExisting ? createNewVersion : false
       });
+
+      CollaborationApiClient.savePipeline({
+        id: saved.id,
+        name: saved.name,
+        description: saved.description,
+        steps: saved.steps,
+        datasetId: sourceDatasetId
+      }).catch(() => {});
 
       onSaved(saved);
       onClose();

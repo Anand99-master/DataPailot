@@ -753,21 +753,22 @@ ORDER BY 1 DESC;`,
     return row || null;
   }
 
-  public createProject(workspaceId: string, name: string, description: string | undefined, ownerId: string): Project {
+  public createProject(workspaceId: string, name: string, description?: string, ownerId?: string): Project {
     const id = `proj_${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`;
     const now = new Date().toISOString();
+    const actualOwnerId = ownerId || 'usr_admin';
 
     this.db.prepare(`
       INSERT INTO projects (id, workspace_id, name, description, owner_id, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
-    `).run(id, workspaceId, name, description || null, ownerId, now, now);
+    `).run(id, workspaceId, name, description || null, actualOwnerId, now, now);
 
     return {
       id,
       workspaceId,
       name,
       description,
-      ownerId,
+      ownerId: actualOwnerId,
       status: 'active',
       createdAt: now,
       updatedAt: now
@@ -1230,16 +1231,23 @@ ORDER BY 1 DESC;`,
     };
   }
 
-  public listActivities(workspaceId: string, limit = 50): ActivityItem[] {
-    const rows = this.db.prepare(`
+  public listActivities(workspaceId: string, limit = 50, projectId?: string): ActivityItem[] {
+    let sql = `
       SELECT id, actor_id as actorId, actor_name as actorName, action, resource_type as resourceType,
         resource_id as resourceId, resource_name as resourceName, workspace_id as workspaceId,
         project_id as projectId, timestamp, metadata_json
       FROM activities
       WHERE workspace_id = ?
-      ORDER BY timestamp DESC
-      LIMIT ?
-    `).all(workspaceId, limit) as any[];
+    `;
+    const params: any[] = [workspaceId];
+    if (projectId) {
+      sql += ' AND project_id = ?';
+      params.push(projectId);
+    }
+    sql += ' ORDER BY timestamp DESC LIMIT ?';
+    params.push(limit);
+
+    const rows = this.db.prepare(sql).all(...params) as any[];
 
     return rows.map(r => ({
       id: r.id,
@@ -1447,7 +1455,8 @@ ORDER BY 1 DESC;`,
     id?: string;
     workspaceId: string;
     projectId?: string;
-    ownerId: string;
+    ownerId?: string;
+    createdByUserId?: string;
     name: string;
     query: string;
     description?: string;
@@ -1458,6 +1467,7 @@ ORDER BY 1 DESC;`,
     const id = params.id || `sq_${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`;
     const now = new Date().toISOString();
     const existing = this.getSavedQueryById(id);
+    const owner = params.ownerId || params.createdByUserId || 'usr_admin';
 
     if (existing) {
       this.db.prepare(`
@@ -1471,7 +1481,7 @@ ORDER BY 1 DESC;`,
         JSON.stringify(params.tags || []),
         params.isFavorite ? 1 : 0,
         params.visibility || existing.visibility,
-        params.ownerId,
+        owner,
         params.projectId || existing.projectId || null,
         now,
         id
@@ -1486,15 +1496,15 @@ ORDER BY 1 DESC;`,
       id,
       params.workspaceId,
       params.projectId || null,
-      params.ownerId,
+      owner,
       params.name,
       params.query,
       params.description || '',
       JSON.stringify(params.tags || []),
       params.isFavorite ? 1 : 0,
       params.visibility || 'WORKSPACE',
-      params.ownerId,
-      params.ownerId,
+      owner,
+      owner,
       now,
       now
     );
@@ -1586,7 +1596,8 @@ ORDER BY 1 DESC;`,
     id?: string;
     workspaceId: string;
     projectId?: string;
-    ownerId: string;
+    ownerId?: string;
+    createdByUserId?: string;
     title: string;
     description?: string;
     widgets: any[];
@@ -1598,6 +1609,7 @@ ORDER BY 1 DESC;`,
     const id = params.id || `dash_${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`;
     const now = new Date().toISOString();
     const existing = this.getDashboardById(id);
+    const owner = params.ownerId || params.createdByUserId || 'usr_admin';
 
     if (existing) {
       this.db.prepare(`
@@ -1611,7 +1623,7 @@ ORDER BY 1 DESC;`,
         JSON.stringify(params.filters || []),
         JSON.stringify(params.layout || { columns: 12, gap: 'md' }),
         params.visibility || existing.visibility,
-        params.ownerId,
+        owner,
         params.projectId || existing.projectId || null,
         params.autoRefreshInterval !== undefined ? params.autoRefreshInterval : existing.autoRefreshInterval,
         now,
@@ -1627,15 +1639,15 @@ ORDER BY 1 DESC;`,
       id,
       params.workspaceId,
       params.projectId || null,
-      params.ownerId,
+      owner,
       params.title,
       params.description || '',
       JSON.stringify(params.widgets || []),
       JSON.stringify(params.filters || []),
       JSON.stringify(params.layout || { columns: 12, gap: 'md' }),
       params.visibility || 'WORKSPACE',
-      params.ownerId,
-      params.ownerId,
+      owner,
+      owner,
       params.autoRefreshInterval || 0,
       now,
       now
@@ -1722,7 +1734,8 @@ ORDER BY 1 DESC;`,
     id?: string;
     workspaceId: string;
     projectId?: string;
-    ownerId: string;
+    ownerId?: string;
+    createdByUserId?: string;
     datasetId?: string;
     name: string;
     description?: string;
@@ -1732,6 +1745,7 @@ ORDER BY 1 DESC;`,
     const id = params.id || `pipe_${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`;
     const now = new Date().toISOString();
     const existing = this.getPipelineById(id);
+    const owner = params.ownerId || params.createdByUserId || 'usr_admin';
 
     if (existing) {
       this.db.prepare(`
@@ -1744,7 +1758,7 @@ ORDER BY 1 DESC;`,
         JSON.stringify(params.steps || []),
         params.datasetId || existing.datasetId || '',
         params.visibility || existing.visibility,
-        params.ownerId,
+        owner,
         params.projectId || existing.projectId || null,
         now,
         id
@@ -1759,14 +1773,14 @@ ORDER BY 1 DESC;`,
       id,
       params.workspaceId,
       params.projectId || null,
-      params.ownerId,
+      owner,
       params.datasetId || '',
       params.name,
       params.description || '',
       JSON.stringify(params.steps || []),
       params.visibility || 'WORKSPACE',
-      params.ownerId,
-      params.ownerId,
+      owner,
+      owner,
       now,
       now
     );

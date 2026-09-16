@@ -21,6 +21,7 @@ import { runAiDataCleaning15_5Tests } from './testAiDataCleaning15_5';
 import { runLargeDatasetPerformance15_6Tests } from './testLargeDatasetPerformance15_6';
 import { runPhase16_1Tests } from './testPhase16_1UiOptimization';
 import { runPhase16_3Tests } from './testPhase16_3Collaboration';
+import { runProjectSwitchingAndIsolationTests } from './testProjectSwitchingAndIsolation';
 import { runPhase16_4Tests } from './testPhase16_4Production';
 import { runMigrationTests } from './testMigrations';
 import { runDockerAndProductionTests } from './testDockerAndProduction';
@@ -60,6 +61,7 @@ const suites: TestGroup[] = [
   { name: '20. LARGE DATASET PERFORMANCE & PROCESSING ENGINE (15.6)', runner: runLargeDatasetPerformance15_6Tests },
   { name: '21. PHASE 16.1 UI/UX POLISH & SQL WORKSPACE OPTIMIZATION', runner: runPhase16_1Tests },
   { name: '22. PHASE 16.3 SHARING, REPORTS & COLLABORATION UX', runner: runPhase16_3Tests },
+  { name: '22b. PROJECT SWITCHING & SCOPED RESOURCE ISOLATION MATRIX', runner: runProjectSwitchingAndIsolationTests },
   { name: '23. PHASE 16.4 PRODUCTION DEPLOYMENT & INFRASTRUCTURE', runner: runPhase16_4Tests },
   { name: '24. PHASE 16.4A PRODUCTION MIGRATION SYSTEM', runner: runMigrationTests },
   { name: '25. PHASE 16.4B DOCKER & PRODUCTION RUNTIME', runner: runDockerAndProductionTests },

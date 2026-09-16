@@ -49,6 +49,7 @@ import { DashboardAiBuilderModal } from './DashboardAiBuilderModal';
 import { DashboardInsightsDrawer } from './DashboardInsightsDrawer';
 import { AddToDashboardModal } from './AddToDashboardModal';
 import { useCollaboration } from '../../context/CollaborationContext';
+import { CollaborationApiClient } from '../../services/collaborationApi';
 
 interface DashboardWorkspaceProps {
   discoveredTables: DiscoveredTable[];
@@ -65,7 +66,7 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
   onNavigateToVisualization,
   onNavigateToAnalysis
 }) => {
-  const { activeWorkspace } = useCollaboration();
+  const { activeWorkspace, activeProjectId } = useCollaboration();
   const [dashboards, setDashboards] = useState<Dashboard[]>([]);
   const [currentDashboardId, setCurrentDashboardId] = useState<string | null>(null);
 
@@ -100,16 +101,45 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
 
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  // Reload dashboards whenever active workspace changes
+  // Reload dashboards whenever active workspace or active project changes
   useEffect(() => {
     if (activeWorkspace?.id) {
       DashboardService.setWorkspaceId(activeWorkspace.id);
     }
+    DashboardService.setProjectId(activeProjectId);
     const list = DashboardService.getDashboards();
     setDashboards(list);
     setCurrentDashboardId(null);
     setWidgetResults(new Map());
-  }, [activeWorkspace?.id]);
+
+    // Sync from collaboration API
+    CollaborationApiClient.listDashboards(activeProjectId || undefined)
+      .then(res => {
+        if (res && res.success && Array.isArray(res.dashboards)) {
+          const local = DashboardService.getDashboards();
+          const map = new Map<string, Dashboard>();
+          local.forEach(d => map.set(d.id, d));
+          res.dashboards.forEach(d => {
+            const mapped: Dashboard = {
+              id: d.id,
+              name: d.title,
+              description: d.description,
+              widgets: d.widgets || [],
+              filters: d.filters || [],
+              layout: d.layout || { columns: 3, rowHeight: 180, gap: 16 },
+              createdAt: d.createdAt,
+              updatedAt: d.updatedAt,
+              autoRefreshInterval: d.autoRefreshInterval || 0,
+              projectId: d.projectId
+            };
+            map.set(d.id, mapped);
+            DashboardService.saveDashboard(mapped);
+          });
+          setDashboards(Array.from(map.values()));
+        }
+      })
+      .catch(() => {});
+  }, [activeWorkspace?.id, activeProjectId]);
 
   const currentDashboard = dashboards.find(d => d.id === currentDashboardId) || null;
 

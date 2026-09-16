@@ -8,6 +8,7 @@ import {
 
 export class ImportApiClient {
   private static workspaceId: string = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_workspace_id')) || 'ws_primary';
+  private static projectId: string | null = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_project_id')) || null;
 
   public static setWorkspaceId(id: string) {
     this.workspaceId = id;
@@ -17,11 +18,23 @@ export class ImportApiClient {
     return this.workspaceId;
   }
 
+  public static setProjectId(id: string | null) {
+    this.projectId = id && id.trim() && id !== 'null' && id !== 'undefined' ? id.trim() : null;
+  }
+
+  public static getProjectId(): string | null {
+    return this.projectId;
+  }
+
   private static getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
-    return {
+    const headers: Record<string, string> = {
       'x-workspace-id': this.workspaceId,
       ...extraHeaders
     };
+    if (this.projectId) {
+      headers['x-project-id'] = this.projectId;
+    }
+    return headers;
   }
 
   /**

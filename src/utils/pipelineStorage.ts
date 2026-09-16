@@ -4,12 +4,39 @@ import { PipelineValidator } from './pipelineValidator';
 const STORAGE_KEY = 'datapilot_saved_pipelines_v1';
 
 export class PipelineStorage {
+  private static workspaceId: string = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_workspace_id')) || 'ws_primary';
+  private static projectId: string | null = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_project_id')) || null;
+
+  public static setWorkspaceId(id: string) {
+    this.workspaceId = id;
+  }
+
+  public static getWorkspaceId(): string {
+    return this.workspaceId;
+  }
+
+  public static setProjectId(id: string | null) {
+    this.projectId = id && id.trim() && id !== 'null' && id !== 'undefined' ? id.trim() : null;
+  }
+
+  public static getProjectId(): string | null {
+    return this.projectId;
+  }
+
+  private static getStorageKey(): string {
+    return `${STORAGE_KEY}_${this.workspaceId}${this.projectId ? `_${this.projectId}` : ''}`;
+  }
+
   /**
    * Retrieves all saved pipelines from localStorage
    */
   public static getSavedPipelines(): SavedPipeline[] {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      let raw = localStorage.getItem(this.getStorageKey());
+      // Backward compatibility for primary workspace without project
+      if (!raw && this.workspaceId === 'ws_primary' && !this.projectId) {
+        raw = localStorage.getItem(STORAGE_KEY);
+      }
       if (!raw) return this.getDefaultPipelines();
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
@@ -186,7 +213,7 @@ export class PipelineStorage {
 
   private static persist(pipelines: SavedPipeline[]) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(pipelines));
+      localStorage.setItem(this.getStorageKey(), JSON.stringify(pipelines));
     } catch {
       // Ignored
     }

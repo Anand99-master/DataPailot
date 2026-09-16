@@ -68,6 +68,7 @@ export interface AuthContext {
   user: User;
   session: Session;
   workspaceId: string;
+  projectId?: string | null;
   memberRole: UserRole;
   permissions: Permission[];
 }

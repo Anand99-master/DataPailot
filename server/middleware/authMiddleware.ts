@@ -38,6 +38,8 @@ export function authMiddleware(req: Request, _res: Response, next: NextFunction)
 
   // Requested workspace id
   const headerWsId = (req.headers['x-workspace-id'] as string) || (req.query.workspaceId as string) || 'ws_primary';
+  const rawProjId = (req.headers['x-project-id'] as string) || (req.query.projectId as string);
+  const headerProjId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
 
   if (token) {
     const session = store.getSessionByToken(token);
@@ -64,6 +66,7 @@ export function authMiddleware(req: Request, _res: Response, next: NextFunction)
           user,
           session,
           workspaceId: activeWsId,
+          projectId: headerProjId || null,
           memberRole: role,
           permissions
         };
@@ -88,6 +91,7 @@ export function authMiddleware(req: Request, _res: Response, next: NextFunction)
         lastAccessedAt: new Date().toISOString()
       },
       workspaceId: headerWsId || 'ws_primary',
+      projectId: headerProjId || null,
       memberRole: role,
       permissions: PermissionService.getPermissionsForRole(role)
     };

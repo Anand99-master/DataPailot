@@ -5,6 +5,7 @@ const LAST_OPENED_KEY = 'datapilot_last_opened_dashboard_id';
 
 export class DashboardService {
   private static workspaceId: string = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_workspace_id')) || 'ws_primary';
+  private static projectId: string | null = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_project_id')) || null;
 
   public static setWorkspaceId(id: string) {
     this.workspaceId = id;
@@ -14,12 +15,20 @@ export class DashboardService {
     return this.workspaceId;
   }
 
+  public static setProjectId(id: string | null) {
+    this.projectId = id && id.trim() && id !== 'null' && id !== 'undefined' ? id.trim() : null;
+  }
+
+  public static getProjectId(): string | null {
+    return this.projectId;
+  }
+
   private static getStorageKey(): string {
-    return `${DASHBOARDS_STORAGE_KEY}_${this.workspaceId}`;
+    return `${DASHBOARDS_STORAGE_KEY}_${this.workspaceId}${this.projectId ? `_${this.projectId}` : ''}`;
   }
 
   private static getLastOpenedKey(): string {
-    return `${LAST_OPENED_KEY}_${this.workspaceId}`;
+    return `${LAST_OPENED_KEY}_${this.workspaceId}${this.projectId ? `_${this.projectId}` : ''}`;
   }
 
   /**
@@ -28,8 +37,8 @@ export class DashboardService {
   public static getDashboards(): Dashboard[] {
     try {
       let raw = localStorage.getItem(this.getStorageKey());
-      // Backward compatibility for primary workspace
-      if (!raw && this.workspaceId === 'ws_primary') {
+      // Backward compatibility for primary workspace without project
+      if (!raw && this.workspaceId === 'ws_primary' && !this.projectId) {
         raw = localStorage.getItem(DASHBOARDS_STORAGE_KEY);
       }
       if (!raw) return [];
@@ -56,6 +65,7 @@ export class DashboardService {
     const now = new Date().toISOString();
     const updated: Dashboard = {
       ...dashboard,
+      projectId: dashboard.projectId || (this.projectId ? this.projectId : undefined),
       updatedAt: now
     };
 

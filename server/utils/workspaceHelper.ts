@@ -25,11 +25,35 @@ export function getEffectiveWorkspaceId(req: Request): string {
 }
 
 /**
- * Generates an isolated session + workspace storage key for datasets,
- * ensuring imported files and tables in workspace A never leak to workspace B.
+ * Extracts authoritative active project id from the request.
+ * Checks x-project-id header, query parameter, body projectId,
+ * or authenticated context.
+ */
+export function getEffectiveProjectId(req: Request): string | null {
+  const headerProj = req.headers['x-project-id'];
+  if (typeof headerProj === 'string' && headerProj.trim() && headerProj.trim() !== 'null' && headerProj.trim() !== 'undefined') {
+    return headerProj.trim();
+  }
+  const queryProj = req.query?.projectId;
+  if (typeof queryProj === 'string' && queryProj.trim() && queryProj.trim() !== 'null' && queryProj.trim() !== 'undefined') {
+    return queryProj.trim();
+  }
+  if (req.body && typeof req.body.projectId === 'string' && req.body.projectId.trim() && req.body.projectId.trim() !== 'null' && req.body.projectId.trim() !== 'undefined') {
+    return req.body.projectId.trim();
+  }
+  if (req.authContext?.projectId) {
+    return req.authContext.projectId;
+  }
+  return null;
+}
+
+/**
+ * Generates an isolated session + workspace + project storage key for datasets,
+ * ensuring imported files and tables in workspace A / project A never leak.
  */
 export function getSessionDatasetStoreKey(req: Request, res: Response): string {
   const sessionId = getSessionId(req, res);
   const workspaceId = getEffectiveWorkspaceId(req);
-  return `${sessionId}:${workspaceId}`;
+  const projectId = getEffectiveProjectId(req);
+  return projectId ? `${sessionId}:${workspaceId}:${projectId}` : `${sessionId}:${workspaceId}`;
 }

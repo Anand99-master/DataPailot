@@ -356,6 +356,8 @@ export interface SavedPipeline {
   id: string;
   name: string;
   description?: string;
+  workspaceId?: string;
+  projectId?: string | null;
   sourceDatasetId?: string;
   sourceDatasetName?: string;
   version: number;

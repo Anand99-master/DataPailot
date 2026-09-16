@@ -13,6 +13,7 @@ import { ImportApiClient } from '../services/importApi';
 import { DatabaseApiClient } from '../services/databaseApi';
 import { CleaningApiClient } from '../services/cleaningApi';
 import { DashboardService } from '../services/dashboardService';
+import { PipelineStorage } from '../utils/pipelineStorage';
 
 export const syncAllWorkspaceClients = (workspaceId: string) => {
   if (typeof localStorage !== 'undefined') {
@@ -23,6 +24,27 @@ export const syncAllWorkspaceClients = (workspaceId: string) => {
   DatabaseApiClient.setWorkspaceId(workspaceId);
   CleaningApiClient.setWorkspaceId(workspaceId);
   DashboardService.setWorkspaceId(workspaceId);
+  PipelineStorage.setWorkspaceId(workspaceId);
+};
+
+export const syncAllProjectClients = (projectId: string | null) => {
+  if (typeof localStorage !== 'undefined') {
+    if (projectId) {
+      localStorage.setItem('datapilot_active_project_id', projectId);
+    } else {
+      localStorage.removeItem('datapilot_active_project_id');
+    }
+  }
+  CollaborationApiClient.setProjectId(projectId);
+  ImportApiClient.setProjectId(projectId);
+  DatabaseApiClient.setProjectId(projectId);
+  CleaningApiClient.setProjectId(projectId);
+  DashboardService.setProjectId(projectId);
+  PipelineStorage.setProjectId(projectId);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('datapilot:project-changed', { detail: { projectId } }));
+  }
 };
 
 interface CollaborationContextType {
@@ -30,6 +52,7 @@ interface CollaborationContextType {
   activeWorkspace: Workspace | null;
   workspaces: Workspace[];
   activeProject: Project | null;
+  activeProjectId: string | null;
   projects: Project[];
   role: UserRole;
   permissions: Permission[];
@@ -113,6 +136,17 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       const res = await CollaborationApiClient.listProjects();
       if (res.success && res.projects) {
         setProjects(res.projects);
+        const savedProjectId = typeof localStorage !== 'undefined' ? localStorage.getItem('datapilot_active_project_id') : null;
+        if (savedProjectId) {
+          const match = res.projects.find(p => p.id === savedProjectId);
+          if (match) {
+            setActiveProject(match);
+            syncAllProjectClients(match.id);
+          } else {
+            setActiveProject(null);
+            syncAllProjectClients(null);
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to refresh projects', err);
@@ -159,6 +193,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       setActiveWorkspace(ws);
       setActiveProject(null);
       syncAllWorkspaceClients(ws.id);
+      syncAllProjectClients(null);
       // Re-fetch auth context for this workspace to get member role and permissions
       const authRes = await CollaborationApiClient.getCurrentAuth();
       if (authRes.success) {
@@ -166,20 +201,23 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         setRole(authData.memberRole || 'ANALYST');
         setPermissions(authData.permissions || []);
       }
-      refreshProjects();
-      refreshNotifications();
-      refreshActivities();
+      await refreshProjects();
+      await refreshNotifications();
+      await refreshActivities();
     }
   }, [workspaces, refreshProjects, refreshNotifications, refreshActivities]);
 
   const switchProject = useCallback((projectId: string | null) => {
     if (!projectId) {
       setActiveProject(null);
+      syncAllProjectClients(null);
     } else {
-      const found = projects.find(p => p.id === projectId) || null;
+      const found = projects.find(p => p.id === projectId) || ({ id: projectId, name: projectId, workspaceId: activeWorkspace?.id || '' } as Project);
       setActiveProject(found);
+      syncAllProjectClients(found.id);
     }
-  }, [projects]);
+    refreshActivities();
+  }, [projects, activeWorkspace, refreshActivities]);
 
   const can = useCallback((permission: Permission): boolean => {
     return permissions.includes(permission);
@@ -227,11 +265,14 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  const activeProjectId = activeProject?.id || null;
+
   const value = useMemo(() => ({
     user,
     activeWorkspace,
     workspaces,
     activeProject,
+    activeProjectId,
     projects,
     role,
     permissions,
@@ -255,6 +296,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     activeWorkspace,
     workspaces,
     activeProject,
+    activeProjectId,
     projects,
     role,
     permissions,

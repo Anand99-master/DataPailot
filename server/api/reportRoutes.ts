@@ -12,7 +12,8 @@ router.get('/', requireAuth, requirePermission('report.read'), (req: Request, re
   try {
     const store = CollaborationStore.getInstance();
     const wsId = req.authContext!.workspaceId;
-    const projectId = req.query.projectId as string | undefined;
+    const rawProjId = (req.query.projectId as string) || (req.headers['x-project-id'] as string) || req.authContext?.projectId;
+    const projectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
     const reports = store.listReports(wsId, projectId);
     res.json({ success: true, reports });
   } catch (err: any) {
@@ -31,13 +32,16 @@ router.post('/', requireAuth, requirePermission('report.create'), (req: Request,
       return;
     }
 
+    const rawProjId = projectId || (req.headers['x-project-id'] as string) || req.authContext?.projectId;
+    const effectiveProjectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+
     const store = CollaborationStore.getInstance();
     const wsId = req.authContext!.workspaceId;
     const userId = req.authContext!.user.id;
 
     const report = store.createReport({
       workspaceId: wsId,
-      projectId,
+      projectId: effectiveProjectId,
       ownerId: userId,
       title: title.trim(),
       description,
@@ -56,7 +60,7 @@ router.post('/', requireAuth, requirePermission('report.create'), (req: Request,
       resourceId: report.id,
       resourceName: report.title,
       workspaceId: wsId,
-      projectId
+      projectId: effectiveProjectId
     });
 
     store.logAuditEvent({
@@ -94,6 +98,13 @@ router.get('/:id', requireAuth, requirePermission('report.read'), (req: Request,
       return;
     }
 
+    const rawProjId = (req.headers['x-project-id'] as string) || (req.query.projectId as string) || req.authContext?.projectId;
+    const activeProjectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+    if (activeProjectId && report.projectId && report.projectId !== activeProjectId) {
+      res.status(403).json({ success: false, error: 'Cannot access report belonging to another project.' });
+      return;
+    }
+
     res.json({ success: true, report });
   } catch (err: any) {
     res.status(500).json({ success: false, error: 'Failed to get report.' });
@@ -114,6 +125,13 @@ router.put('/:id', requireAuth, requirePermission('report.create'), (req: Reques
 
     if (report.workspaceId !== req.authContext!.workspaceId) {
       res.status(403).json({ success: false, error: 'Cannot modify report from another workspace.' });
+      return;
+    }
+
+    const rawProjId = (req.headers['x-project-id'] as string) || (req.query.projectId as string) || req.authContext?.projectId;
+    const activeProjectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+    if (activeProjectId && report.projectId && report.projectId !== activeProjectId) {
+      res.status(403).json({ success: false, error: 'Cannot modify report belonging to another project.' });
       return;
     }
 
@@ -138,6 +156,13 @@ router.delete('/:id', requireAuth, requirePermission('report.create'), (req: Req
 
     if (report.workspaceId !== req.authContext!.workspaceId) {
       res.status(403).json({ success: false, error: 'Cannot delete report from another workspace.' });
+      return;
+    }
+
+    const rawProjId = (req.headers['x-project-id'] as string) || (req.query.projectId as string) || req.authContext?.projectId;
+    const activeProjectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+    if (activeProjectId && report.projectId && report.projectId !== activeProjectId) {
+      res.status(403).json({ success: false, error: 'Cannot delete report belonging to another project.' });
       return;
     }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Bookmark,
@@ -21,6 +21,8 @@ import { ImportedDataset } from '../../../types/import';
 import { PipelineStorage } from '../../../utils/pipelineStorage';
 import { PipelineValidator } from '../../../utils/pipelineValidator';
 import { VersionHistoryModal } from './VersionHistoryModal';
+import { useCollaboration } from '../../../context/CollaborationContext';
+import { CollaborationApiClient } from '../../../services/collaborationApi';
 
 interface SavedPipelinesModalProps {
   currentDataset: ImportedDataset;
@@ -33,7 +35,12 @@ export const SavedPipelinesModal: React.FC<SavedPipelinesModalProps> = ({
   onApplyPipeline,
   onClose
 }) => {
-  const [savedPipelines, setSavedPipelines] = useState<SavedPipeline[]>(() => PipelineStorage.getSavedPipelines());
+  const { activeWorkspace, activeProjectId } = useCollaboration();
+  const [savedPipelines, setSavedPipelines] = useState<SavedPipeline[]>(() => {
+    PipelineStorage.setWorkspaceId(activeWorkspace?.id || 'ws_primary');
+    PipelineStorage.setProjectId(activeProjectId);
+    return PipelineStorage.getSavedPipelines();
+  });
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(
     savedPipelines.length > 0 ? savedPipelines[0].id : null
   );
@@ -41,6 +48,42 @@ export const SavedPipelinesModal: React.FC<SavedPipelinesModalProps> = ({
   const [editingName, setEditingName] = useState('');
   const [historyPipeline, setHistoryPipeline] = useState<SavedPipeline | null>(null);
   const [applyMode, setApplyMode] = useState<'replace' | 'append'>('replace');
+
+  useEffect(() => {
+    PipelineStorage.setWorkspaceId(activeWorkspace?.id || 'ws_primary');
+    PipelineStorage.setProjectId(activeProjectId);
+    const list = PipelineStorage.getSavedPipelines();
+    setSavedPipelines(list);
+    setSelectedPipelineId(list.length > 0 ? list[0].id : null);
+
+    CollaborationApiClient.listPipelines(activeProjectId || undefined)
+      .then(res => {
+        if (res && res.success && Array.isArray(res.pipelines)) {
+          const local = PipelineStorage.getSavedPipelines();
+          const map = new Map<string, SavedPipeline>();
+          local.forEach(p => map.set(p.id, p));
+          res.pipelines.forEach(p => {
+            const mapped: SavedPipeline = {
+              id: p.id,
+              name: p.name,
+              description: p.description,
+              steps: p.steps || [],
+              sourceDatasetId: p.datasetId,
+              sourceDatasetName: '',
+              requiredColumns: p.requiredColumns || [],
+              createdAt: p.createdAt,
+              updatedAt: p.updatedAt,
+              version: 1,
+              projectId: p.projectId
+            };
+            map.set(p.id, mapped);
+          });
+          const merged = Array.from(map.values());
+          setSavedPipelines(merged);
+        }
+      })
+      .catch(() => {});
+  }, [activeWorkspace?.id, activeProjectId]);
 
   const selectedPipeline = savedPipelines.find(p => p.id === selectedPipelineId) || null;
 

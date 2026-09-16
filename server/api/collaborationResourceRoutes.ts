@@ -6,13 +6,14 @@ import { AccessControlService } from '../services/AccessControlService';
 const router = Router();
 
 // ==========================================
-// SAVED QUERIES COLLABORATION API
+// QUERIES COLLABORATION API
 // ==========================================
 router.get('/queries', requireAuth, requirePermission('query.read'), (req: Request, res: Response) => {
   try {
     const store = CollaborationStore.getInstance();
     const wsId = req.authContext!.workspaceId;
-    const projectId = req.query.projectId as string | undefined;
+    const rawProjId = (req.query.projectId as string) || (req.headers['x-project-id'] as string) || req.authContext?.projectId;
+    const projectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
     const queries = store.listSavedQueries(wsId, projectId);
     res.json({ success: true, queries });
   } catch (err: any) {
@@ -34,6 +35,13 @@ router.get('/queries/:id', requireAuth, requirePermission('query.read'), (req: R
       return;
     }
 
+    const rawProjId = (req.headers['x-project-id'] as string) || (req.query.projectId as string) || req.authContext?.projectId;
+    const activeProjectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+    if (activeProjectId && query.projectId && query.projectId !== activeProjectId) {
+      res.status(403).json({ success: false, error: 'Cannot access query belonging to another project.' });
+      return;
+    }
+
     res.json({ success: true, query });
   } catch (err: any) {
     res.status(500).json({ success: false, error: 'Failed to get query.' });
@@ -52,10 +60,13 @@ router.post('/queries', requireAuth, requirePermission('query.create'), (req: Re
       return;
     }
 
+    const rawProjId = projectId || (req.headers['x-project-id'] as string) || req.authContext?.projectId;
+    const effectiveProjectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+
     const saved = store.saveQuery({
       id,
       workspaceId: wsId,
-      projectId,
+      projectId: effectiveProjectId,
       ownerId: userId,
       name,
       query,
@@ -73,7 +84,7 @@ router.post('/queries', requireAuth, requirePermission('query.create'), (req: Re
       resourceId: saved.id,
       resourceName: saved.name,
       workspaceId: wsId,
-      projectId
+      projectId: effectiveProjectId
     });
 
     res.status(201).json({ success: true, query: saved });
@@ -88,6 +99,13 @@ router.delete('/queries/:id', requireAuth, requirePermission('query.delete'), (r
     const query = store.getSavedQueryById(req.params.id);
     if (!query) {
       res.status(404).json({ success: false, error: 'Query not found.' });
+      return;
+    }
+
+    const rawProjId = (req.headers['x-project-id'] as string) || (req.query.projectId as string) || req.authContext?.projectId;
+    const activeProjectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+    if (activeProjectId && query.projectId && query.projectId !== activeProjectId) {
+      res.status(403).json({ success: false, error: 'Cannot delete query belonging to another project.' });
       return;
     }
 
@@ -121,7 +139,8 @@ router.get('/dashboards', requireAuth, requirePermission('dashboard.read'), (req
   try {
     const store = CollaborationStore.getInstance();
     const wsId = req.authContext!.workspaceId;
-    const projectId = req.query.projectId as string | undefined;
+    const rawProjId = (req.query.projectId as string) || (req.headers['x-project-id'] as string) || req.authContext?.projectId;
+    const projectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
     const dashboards = store.listDashboards(wsId, projectId);
     res.json({ success: true, dashboards });
   } catch (err: any) {
@@ -143,6 +162,13 @@ router.get('/dashboards/:id', requireAuth, requirePermission('dashboard.read'), 
       return;
     }
 
+    const rawProjId = (req.headers['x-project-id'] as string) || (req.query.projectId as string) || req.authContext?.projectId;
+    const activeProjectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+    if (activeProjectId && dashboard.projectId && dashboard.projectId !== activeProjectId) {
+      res.status(403).json({ success: false, error: 'Cannot access dashboard belonging to another project.' });
+      return;
+    }
+
     res.json({ success: true, dashboard });
   } catch (err: any) {
     res.status(500).json({ success: false, error: 'Failed to get dashboard.' });
@@ -161,10 +187,13 @@ router.post('/dashboards', requireAuth, requirePermission('dashboard.create'), (
       return;
     }
 
+    const rawProjId = projectId || (req.headers['x-project-id'] as string) || req.authContext?.projectId;
+    const effectiveProjectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+
     const saved = store.saveDashboard({
       id,
       workspaceId: wsId,
-      projectId,
+      projectId: effectiveProjectId,
       ownerId: userId,
       title,
       description,
@@ -183,7 +212,7 @@ router.post('/dashboards', requireAuth, requirePermission('dashboard.create'), (
       resourceId: saved.id,
       resourceName: saved.title,
       workspaceId: wsId,
-      projectId
+      projectId: effectiveProjectId
     });
 
     res.status(201).json({ success: true, dashboard: saved });
@@ -198,6 +227,13 @@ router.delete('/dashboards/:id', requireAuth, requirePermission('dashboard.delet
     const dashboard = store.getDashboardById(req.params.id);
     if (!dashboard) {
       res.status(404).json({ success: false, error: 'Dashboard not found.' });
+      return;
+    }
+
+    const rawProjId = (req.headers['x-project-id'] as string) || (req.query.projectId as string) || req.authContext?.projectId;
+    const activeProjectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+    if (activeProjectId && dashboard.projectId && dashboard.projectId !== activeProjectId) {
+      res.status(403).json({ success: false, error: 'Cannot delete dashboard belonging to another project.' });
       return;
     }
 
@@ -231,7 +267,8 @@ router.get('/pipelines', requireAuth, requirePermission('pipeline.read'), (req: 
   try {
     const store = CollaborationStore.getInstance();
     const wsId = req.authContext!.workspaceId;
-    const projectId = req.query.projectId as string | undefined;
+    const rawProjId = (req.query.projectId as string) || (req.headers['x-project-id'] as string) || req.authContext?.projectId;
+    const projectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
     const pipelines = store.listPipelines(wsId, projectId);
     res.json({ success: true, pipelines });
   } catch (err: any) {
@@ -253,6 +290,13 @@ router.get('/pipelines/:id', requireAuth, requirePermission('pipeline.read'), (r
       return;
     }
 
+    const rawProjId = (req.headers['x-project-id'] as string) || (req.query.projectId as string) || req.authContext?.projectId;
+    const activeProjectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+    if (activeProjectId && pipeline.projectId && pipeline.projectId !== activeProjectId) {
+      res.status(403).json({ success: false, error: 'Cannot access pipeline belonging to another project.' });
+      return;
+    }
+
     res.json({ success: true, pipeline });
   } catch (err: any) {
     res.status(500).json({ success: false, error: 'Failed to get pipeline.' });
@@ -271,10 +315,13 @@ router.post('/pipelines', requireAuth, requirePermission('pipeline.create'), (re
       return;
     }
 
+    const rawProjId = projectId || (req.headers['x-project-id'] as string) || req.authContext?.projectId;
+    const effectiveProjectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+
     const saved = store.savePipeline({
       id,
       workspaceId: wsId,
-      projectId,
+      projectId: effectiveProjectId,
       ownerId: userId,
       datasetId: datasetId || '',
       name,
@@ -291,7 +338,7 @@ router.post('/pipelines', requireAuth, requirePermission('pipeline.create'), (re
       resourceId: saved.id,
       resourceName: saved.name,
       workspaceId: wsId,
-      projectId
+      projectId: effectiveProjectId
     });
 
     res.status(201).json({ success: true, pipeline: saved });
@@ -306,6 +353,13 @@ router.delete('/pipelines/:id', requireAuth, requirePermission('pipeline.delete'
     const pipeline = store.getPipelineById(req.params.id);
     if (!pipeline) {
       res.status(404).json({ success: false, error: 'Pipeline not found.' });
+      return;
+    }
+
+    const rawProjId = (req.headers['x-project-id'] as string) || (req.query.projectId as string) || req.authContext?.projectId;
+    const activeProjectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+    if (activeProjectId && pipeline.projectId && pipeline.projectId !== activeProjectId) {
+      res.status(403).json({ success: false, error: 'Cannot delete pipeline belonging to another project.' });
       return;
     }
 

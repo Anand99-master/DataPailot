@@ -78,6 +78,8 @@ export interface Dashboard {
   name: string;
   title?: string;
   description?: string;
+  workspaceId?: string;
+  projectId?: string | null;
   widgets: DashboardWidget[];
   filters: DashboardFilter[];
   layout: DashboardLayout;

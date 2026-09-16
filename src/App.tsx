@@ -39,6 +39,7 @@ import { ImportApiClient } from './services/importApi';
 import { DataImportModal } from './components/Import/DataImportModal';
 import { DatasetDetailModal } from './components/Import/DatasetDetailModal';
 import { CollaborationProvider, useCollaboration } from './context/CollaborationContext';
+import { CollaborationApiClient } from './services/collaborationApi';
 import { AuthModal } from './components/Collaboration/AuthModal';
 import { AdminConsoleModal } from './components/Collaboration/AdminConsoleModal';
 import { ActivityFeedDrawer } from './components/Collaboration/ActivityFeedDrawer';
@@ -46,7 +47,7 @@ import { GlobalSearchModal } from './components/Collaboration/GlobalSearchModal'
 import { ReportsWorkspace } from './components/Collaboration/ReportsWorkspace';
 
 function AppContent() {
-  const { activeWorkspace } = useCollaboration();
+  const { activeWorkspace, activeProject, activeProjectId } = useCollaboration();
 
   // Connection state
   const [connection, setConnection] = useState<SanitizedConnectionInfo | null>(null);
@@ -368,19 +369,57 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
   };
 
 
-  // Query Library state
-  const [savedQueries, setSavedQueries] = useState<SavedQuery[]>(() => {
-    try {
-      const saved = localStorage.getItem('datapilot_saved_queries');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Query Library state (project-scoped)
+  const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
 
   useEffect(() => {
-    localStorage.setItem('datapilot_saved_queries', JSON.stringify(savedQueries));
-  }, [savedQueries]);
+    const storageKey = `datapilot_saved_queries_${activeWorkspace?.id || 'ws_primary'}${activeProjectId ? `_${activeProjectId}` : ''}`;
+    let localQueries: SavedQuery[] = [];
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        localQueries = JSON.parse(saved);
+      }
+    } catch {
+      localQueries = [];
+    }
+    setSavedQueries(localQueries);
+
+    // Fetch from backend API
+    CollaborationApiClient.listSavedQueries(activeProjectId || undefined)
+      .then(res => {
+        if (res && res.success && Array.isArray(res.queries)) {
+          const map = new Map<string, SavedQuery>();
+          localQueries.forEach(q => map.set(q.id, q));
+          res.queries.forEach(q => {
+            const mapped: SavedQuery = {
+              id: q.id,
+              name: q.name,
+              query: q.query,
+              description: q.description,
+              tags: q.tags || [],
+              isFavorite: false,
+              createdAt: q.createdAt,
+              updatedAt: q.updatedAt
+            };
+            map.set(q.id, mapped);
+          });
+          const merged = Array.from(map.values());
+          setSavedQueries(merged);
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(merged));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, [activeWorkspace?.id, activeProjectId]);
+
+  useEffect(() => {
+    const storageKey = `datapilot_saved_queries_${activeWorkspace?.id || 'ws_primary'}${activeProjectId ? `_${activeProjectId}` : ''}`;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(savedQueries));
+    } catch {}
+  }, [savedQueries, activeWorkspace?.id, activeProjectId]);
 
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [saveModalState, setSaveModalState] = useState<{ isOpen: boolean; mode: 'save' | 'save_as' }>({ isOpen: false, mode: 'save' });
@@ -395,6 +434,14 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
         ...q, name, description, tags, query: tab.query, updatedAt: new Date().toISOString()
       } : q));
       setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, name, isModified: false } : t));
+      CollaborationApiClient.saveSavedQuery({
+        id: tab.savedQueryId,
+        name,
+        description,
+        query: tab.query,
+        tags,
+        projectId: activeProjectId || undefined
+      }).catch(() => {});
     } else {
       // Create new
       const newId = `sq-${Date.now()}`;
@@ -410,6 +457,14 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
       };
       setSavedQueries(prev => [...prev, newSavedQuery]);
       setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, name, savedQueryId: newId, isModified: false } : t));
+      CollaborationApiClient.saveSavedQuery({
+        id: newId,
+        name,
+        description,
+        query: tab.query,
+        tags,
+        projectId: activeProjectId || undefined
+      }).catch(() => {});
     }
     setSaveModalState({ isOpen: false, mode: 'save' });
   };
@@ -497,7 +552,7 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
     return () => {
       isMounted = false;
     };
-  }, [activeWorkspace?.id]);
+  }, [activeWorkspace?.id, activeProjectId]);
 
   const loadTables = async () => {
     try {
@@ -1183,7 +1238,10 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
         onClose={() => setIsLibraryOpen(false)}
         savedQueries={savedQueries}
         onOpenQuery={handleOpenLibraryQuery}
-        onDeleteQuery={(id) => setSavedQueries(prev => prev.filter(q => q.id !== id))}
+        onDeleteQuery={(id) => {
+          setSavedQueries(prev => prev.filter(q => q.id !== id));
+          CollaborationApiClient.deleteSavedQuery(id).catch(() => {});
+        }}
         onToggleFavorite={(id) => setSavedQueries(prev => prev.map(q => q.id === id ? { ...q, isFavorite: !q.isFavorite } : q))}
         onDuplicateQuery={(q) => {
           const newId = `sq-${Date.now()}`;

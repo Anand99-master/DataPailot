@@ -18,6 +18,7 @@ import {
 
 export class CollaborationApiClient {
   private static workspaceId: string = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_workspace_id')) || 'ws_primary';
+  private static projectId: string | null = (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_active_project_id')) || null;
   private static sessionToken: string | null = null;
 
   public static setWorkspaceId(id: string) {
@@ -26,6 +27,14 @@ export class CollaborationApiClient {
 
   public static getWorkspaceId(): string {
     return this.workspaceId;
+  }
+
+  public static setProjectId(id: string | null) {
+    this.projectId = id && id.trim() && id !== 'null' && id !== 'undefined' ? id.trim() : null;
+  }
+
+  public static getProjectId(): string | null {
+    return this.projectId;
   }
 
   public static setSessionToken(token: string | null) {
@@ -37,6 +46,9 @@ export class CollaborationApiClient {
       'Content-Type': 'application/json',
       'x-workspace-id': this.workspaceId
     };
+    if (this.projectId) {
+      headers['x-project-id'] = this.projectId;
+    }
     if (this.sessionToken) {
       headers['Authorization'] = `Bearer ${this.sessionToken}`;
     }
@@ -201,7 +213,8 @@ export class CollaborationApiClient {
   // SAVED QUERIES
   // ==========================================
   public static async listSavedQueries(projectId?: string): Promise<{ success: boolean; queries: any[] }> {
-    const url = projectId ? `/api/queries?projectId=${projectId}` : '/api/queries';
+    const targetProj = projectId !== undefined ? projectId : (this.projectId || undefined);
+    const url = targetProj ? `/api/queries?projectId=${encodeURIComponent(targetProj)}` : '/api/queries';
     const res = await fetch(url, { headers: this.getHeaders() });
     return res.json();
   }
@@ -214,16 +227,23 @@ export class CollaborationApiClient {
   public static async saveSavedQuery(queryData: {
     id?: string;
     name: string;
-    sql: string;
+    query?: string;
+    sql?: string;
     description?: string;
     tags?: string[];
     visibility?: string;
     projectId?: string;
+    isFavorite?: boolean;
   }): Promise<{ success: boolean; query: any }> {
+    const payload = {
+      ...queryData,
+      query: queryData.query || queryData.sql,
+      projectId: queryData.projectId !== undefined ? queryData.projectId : (this.projectId || undefined)
+    };
     const res = await fetch('/api/queries', {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify(queryData)
+      body: JSON.stringify(payload)
     });
     return res.json();
   }
@@ -237,10 +257,57 @@ export class CollaborationApiClient {
   }
 
   // ==========================================
+  // DASHBOARDS
+  // ==========================================
+  public static async listDashboards(projectId?: string): Promise<{ success: boolean; dashboards: any[] }> {
+    const targetProj = projectId !== undefined ? projectId : (this.projectId || undefined);
+    const url = targetProj ? `/api/dashboards?projectId=${encodeURIComponent(targetProj)}` : '/api/dashboards';
+    const res = await fetch(url, { headers: this.getHeaders() });
+    return res.json();
+  }
+
+  public static async getDashboard(id: string): Promise<{ success: boolean; dashboard: any }> {
+    const res = await fetch(`/api/dashboards/${id}`, { headers: this.getHeaders() });
+    return res.json();
+  }
+
+  public static async saveDashboard(dashboardData: {
+    id?: string;
+    title: string;
+    description?: string;
+    widgets?: any[];
+    filters?: any[];
+    layout?: any;
+    visibility?: string;
+    autoRefreshInterval?: number;
+    projectId?: string;
+  }): Promise<{ success: boolean; dashboard: any }> {
+    const payload = {
+      ...dashboardData,
+      projectId: dashboardData.projectId !== undefined ? dashboardData.projectId : (this.projectId || undefined)
+    };
+    const res = await fetch('/api/dashboards', {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  }
+
+  public static async deleteDashboard(id: string): Promise<any> {
+    const res = await fetch(`/api/dashboards/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders()
+    });
+    return res.json();
+  }
+
+  // ==========================================
   // PIPELINES
   // ==========================================
   public static async listPipelines(projectId?: string): Promise<{ success: boolean; pipelines: any[] }> {
-    const url = projectId ? `/api/pipelines?projectId=${projectId}` : '/api/pipelines';
+    const targetProj = projectId !== undefined ? projectId : (this.projectId || undefined);
+    const url = targetProj ? `/api/pipelines?projectId=${encodeURIComponent(targetProj)}` : '/api/pipelines';
     const res = await fetch(url, { headers: this.getHeaders() });
     return res.json();
   }
@@ -259,10 +326,14 @@ export class CollaborationApiClient {
     visibility?: string;
     projectId?: string;
   }): Promise<{ success: boolean; pipeline: any }> {
+    const payload = {
+      ...pipelineData,
+      projectId: pipelineData.projectId !== undefined ? pipelineData.projectId : (this.projectId || undefined)
+    };
     const res = await fetch('/api/pipelines', {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify(pipelineData)
+      body: JSON.stringify(payload)
     });
     return res.json();
   }
@@ -309,16 +380,21 @@ export class CollaborationApiClient {
   // REPORTS & SNAPSHOTS
   // ==========================================
   public static async listReports(projectId?: string): Promise<{ success: boolean; reports: Report[] }> {
-    const url = projectId ? `/api/reports?projectId=${projectId}` : '/api/reports';
+    const targetProj = projectId !== undefined ? projectId : (this.projectId || undefined);
+    const url = targetProj ? `/api/reports?projectId=${encodeURIComponent(targetProj)}` : '/api/reports';
     const res = await fetch(url, { headers: this.getHeaders() });
     return res.json();
   }
 
   public static async createReport(reportData: Partial<Report>): Promise<{ success: boolean; report: Report }> {
+    const payload = {
+      ...reportData,
+      projectId: reportData.projectId !== undefined ? reportData.projectId : (this.projectId || undefined)
+    };
     const res = await fetch('/api/reports', {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify(reportData)
+      body: JSON.stringify(payload)
     });
     return res.json();
   }
@@ -378,8 +454,12 @@ export class CollaborationApiClient {
   // ==========================================
   // ACTIVITY & AUDIT
   // ==========================================
-  public static async listActivity(limit: number = 50): Promise<{ success: boolean; activities: ActivityItem[] }> {
-    const res = await fetch(`/api/activity?limit=${limit}`, { headers: this.getHeaders() });
+  public static async listActivity(limit: number = 50, projectId?: string): Promise<{ success: boolean; activities: ActivityItem[] }> {
+    const targetProj = projectId !== undefined ? projectId : (this.projectId || undefined);
+    const url = targetProj
+      ? `/api/activity?limit=${limit}&projectId=${encodeURIComponent(targetProj)}`
+      : `/api/activity?limit=${limit}`;
+    const res = await fetch(url, { headers: this.getHeaders() });
     return res.json();
   }
 

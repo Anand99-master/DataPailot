@@ -12,7 +12,9 @@ router.get('/', requireAuth, (req: Request, res: Response) => {
     const store = CollaborationStore.getInstance();
     const wsId = req.authContext!.workspaceId;
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
-    const activities = store.listActivities(wsId, limit);
+    const rawProjId = (req.query.projectId as string) || (req.headers['x-project-id'] as string) || req.authContext?.projectId;
+    const projectId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
+    const activities = store.listActivities(wsId, limit, projectId);
     res.json({ success: true, activities });
   } catch (err: any) {
     res.status(500).json({ success: false, error: 'Failed to retrieve activity feed.' });
