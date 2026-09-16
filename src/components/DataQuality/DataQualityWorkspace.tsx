@@ -61,14 +61,14 @@ export const DataQualityWorkspace: React.FC<DataQualityWorkspaceProps> = ({
   useEffect(() => {
     const isImported = selectedTable?.schema === 'imported' || !!dataset;
     const sourceName = dataset?.tableName || selectedTable?.name;
-    const schema = dataset ? 'imported' : selectedTable?.schema;
+    const schema = dataset ? 'imported' : (selectedTable?.schema || 'imported');
     
     if (sourceName && schema) {
       loadProfile(schema, sourceName);
     } else {
       setProfile(null);
     }
-  }, [selectedTable?.schema, selectedTable?.name, dataset?.datasetId]);
+  }, [selectedTable?.schema, selectedTable?.name, dataset?.datasetId, dataset?.tableName]);
 
   const handleExportCSV = () => {
     if (!profile) return;
@@ -311,7 +311,11 @@ export const DataQualityWorkspace: React.FC<DataQualityWorkspaceProps> = ({
           <p className="font-semibold text-lg">Profiling Failed</p>
           <p className="text-sm opacity-80">{error}</p>
           <button 
-            onClick={() => selectedTable && loadProfile(selectedTable.schema, selectedTable.name)}
+            onClick={() => {
+              const src = dataset?.tableName || selectedTable?.name;
+              const sch = dataset ? 'imported' : (selectedTable?.schema || 'imported');
+              if (src && sch) loadProfile(sch, src);
+            }}
             className="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors text-sm flex items-center space-x-2"
           >
             <RefreshCw className="w-4 h-4" />

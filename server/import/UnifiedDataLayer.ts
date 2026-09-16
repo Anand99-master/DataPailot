@@ -272,7 +272,89 @@ export class UnifiedDataLayer {
     if (dsId) {
       return store.datasets.get(dsId) || null;
     }
+    // Try case-insensitive lookup
+    const lowerTable = tableName.toLowerCase();
+    for (const [tName, dId] of store.tableToDatasetMap.entries()) {
+      if (tName.toLowerCase() === lowerTable) {
+        return store.datasets.get(dId) || null;
+      }
+    }
     return null;
+  }
+
+  /**
+   * Universally finds an imported dataset by datasetId, physical tableName, or displayName
+   * with fallback store search if scoped context differs slightly.
+   */
+  public findDataset(sessionIdOrStoreKey: string, identifier: string): ImportedDataset | null {
+    if (!identifier) return null;
+    const cleanId = identifier.trim();
+
+    // 1. Direct lookup in requested store
+    const store = this.getStore(sessionIdOrStoreKey);
+    if (store.datasets.has(cleanId)) {
+      return store.datasets.get(cleanId)!;
+    }
+    const byTable = this.getDatasetByTableName(sessionIdOrStoreKey, cleanId);
+    if (byTable) return byTable;
+
+    // Search by display name or lowercase matching in requested store
+    const lower = cleanId.toLowerCase();
+    for (const ds of store.datasets.values()) {
+      if (
+        ds.name === cleanId ||
+        ds.tableName === cleanId ||
+        ds.datasetId === cleanId ||
+        ds.name.toLowerCase() === lower ||
+        ds.tableName.toLowerCase() === lower ||
+        ds.datasetId.toLowerCase() === lower
+      ) {
+        return ds;
+      }
+    }
+
+    // 2. Cross-store session fallback (e.g. if storeKey is sess_123:ws_primary vs sess_123:ws_primary:proj_1 or sess_123)
+    const parts = sessionIdOrStoreKey.split(':');
+    const baseSessionId = parts[0];
+    const targetWorkspaceId = parts.length > 1 ? parts[1] : undefined;
+
+    for (const [sKey, sStore] of this.sessionStores.entries()) {
+      if (sKey === sessionIdOrStoreKey) continue;
+      const otherParts = sKey.split(':');
+      const otherSessionId = otherParts[0];
+      const otherWorkspaceId = otherParts.length > 1 ? otherParts[1] : undefined;
+
+      // Must belong to the same session
+      if (otherSessionId !== baseSessionId) continue;
+      // If workspace is specified in both, they MUST match to maintain tenant/workspace isolation
+      if (targetWorkspaceId && otherWorkspaceId && targetWorkspaceId !== otherWorkspaceId) continue;
+
+      if (sStore.datasets.has(cleanId)) {
+        return sStore.datasets.get(cleanId)!;
+      }
+      for (const ds of sStore.datasets.values()) {
+        if (
+          ds.name === cleanId ||
+          ds.tableName === cleanId ||
+          ds.datasetId === cleanId ||
+          ds.name.toLowerCase() === lower ||
+          ds.tableName.toLowerCase() === lower
+        ) {
+          return ds;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Resolves any dataset identifier (id, display name, table name) to its physical SQLite table name
+   */
+  public getPhysicalTableName(sessionIdOrStoreKey: string, identifier: string): string {
+    const ds = this.findDataset(sessionIdOrStoreKey, identifier);
+    if (ds) return ds.tableName;
+    return ImportSecurity.toSafeSqlTableName(identifier);
   }
 
   /**
@@ -423,8 +505,7 @@ export class UnifiedDataLayer {
    * Retrieves TableDetailsResult conforming to DatabaseAdapter interface
    */
   public getTableDetails(sessionId: string, tableName: string): TableDetailsResult | null {
-    const store = this.getStore(sessionId);
-    const ds = this.getDatasetByTableName(sessionId, tableName);
+    const ds = this.findDataset(sessionId, tableName);
     if (!ds) return null;
 
     const columns: TableColumnInfo[] = ds.columns.map((c, idx) => ({
@@ -457,7 +538,7 @@ export class UnifiedDataLayer {
     options: { maxRows?: number; timeoutMs?: number } = {}
   ): Promise<QueryResultData> {
     const startTime = Date.now();
-    const store = this.getStore(sessionId);
+    let store = this.getStore(sessionId);
 
     // Validate read-only analytical safety
     const safety = QuerySafetyValidator.validate(sql);
@@ -467,11 +548,46 @@ export class UnifiedDataLayer {
 
     const maxRows = options.maxRows || 1000;
     
-    // Adapt any "imported." prefix if user used qualify schema: "imported"."table" -> "table"
-    const normalizedSql = sql.replace(/\b(FROM|JOIN)\s+"?imported"?\."?([a-zA-Z0-9_]+)"?/gi, '$1 "$2"');
+    // Adapt any "imported." prefix if user used qualified schema: "imported"."table" -> "table"
+    let normalizedSql = sql.replace(/\b(FROM|JOIN)\s+"?imported"?\."?([a-zA-Z0-9_]+)"?/gi, '$1 "$2"');
+
+    // If the SQL references any dataset by display name or datasetId, resolve it to physical tableName
+    const allDatasets = Array.from(store.datasets.values());
+    for (const ds of allDatasets) {
+      if (ds.name !== ds.tableName) {
+        // Replace occurrences of ds.name in FROM / JOIN clauses
+        const escapedName = ds.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`\\b(FROM|JOIN)\\s+["']?${escapedName}["']?`, 'gi');
+        normalizedSql = normalizedSql.replace(regex, `$1 "${ds.tableName}"`);
+      }
+    }
 
     try {
-      const stmt = store.db.prepare(normalizedSql);
+      let stmt: any;
+      try {
+        stmt = store.db.prepare(normalizedSql);
+      } catch (prepErr: any) {
+        // If table not found in this specific store, check if it exists in a related session store
+        if (prepErr.message?.includes('no such table')) {
+          const match = normalizedSql.match(/\b(?:FROM|JOIN)\s+"?([a-zA-Z0-9_]+)"?/i);
+          const targetTable = match ? match[1] : null;
+          if (targetTable) {
+            const foundDs = this.findDataset(sessionId, targetTable);
+            if (foundDs) {
+              // Find the store containing this dataset
+              for (const [, candidateStore] of this.sessionStores.entries()) {
+                if (candidateStore.datasets.has(foundDs.datasetId)) {
+                  store = candidateStore;
+                  stmt = store.db.prepare(normalizedSql);
+                  break;
+                }
+              }
+            }
+          }
+        }
+        if (!stmt) throw prepErr;
+      }
+
       const rawRows = stmt.all() as Record<string, unknown>[];
       const executionTimeMs = Date.now() - startTime;
 
@@ -508,6 +624,11 @@ export class UnifiedDataLayer {
         totalAvailableRows: rawRows.length
       };
     } catch (err: any) {
+      if (err.message && err.message.includes('no such table')) {
+        const match = normalizedSql.match(/\b(?:FROM|JOIN)\s+"?([a-zA-Z0-9_]+)"?/i);
+        const tableName = match ? match[1] : 'unknown';
+        throw new Error(`Imported dataset table '${tableName}' is unavailable in the current workspace. Please ensure the dataset is imported.`);
+      }
       throw new Error(`SQL execution error on imported dataset: ${err.message}`);
     }
   }

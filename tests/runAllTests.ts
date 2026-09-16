@@ -16,6 +16,7 @@ import { runVisualizationImportIntegrationTests } from './testVisualizationImpor
 import { runExcelExportTests } from './testExcelExport';
 import { runDataQualityTests } from './testDataQuality';
 import { runDataQualitySelectionTests } from './testDataQualitySelection';
+import { runDataQualityImportIntegrationTests } from './testDataQualityImportIntegration';
 import { runDataTransformation15_2Tests } from './testDataTransformation15_2';
 import { runAiDataCleaning15_5Tests } from './testAiDataCleaning15_5';
 import { runLargeDatasetPerformance15_6Tests } from './testLargeDatasetPerformance15_6';
@@ -55,6 +56,7 @@ const suites: TestGroup[] = [
   { name: '14. IMPORTED DATASET VISUALIZATION INTEGRATION', runner: runVisualizationImportIntegrationTests },
   { name: '15. EXCEL (XLSX) QUERY RESULT EXPORT', runner: runExcelExportTests },
   { name: '16. DATA QUALITY & PROFILING 2.0', runner: runDataQualityTests },
+  { name: '16b. DATA QUALITY IMPORT & CLEANED DATASET INTEGRATION', runner: runDataQualityImportIntegrationTests },
   { name: '17. DATA QUALITY WORKSPACE SELECTION', runner: runDataQualitySelectionTests },
   { name: '18. ADVANCED DATA TRANSFORMATION WORKSPACE (15.2)', runner: runDataTransformation15_2Tests },
   { name: '19. AI-ASSISTED DATA CLEANING & AUTO-CLEAN RECOMMENDATIONS (15.5)', runner: runAiDataCleaning15_5Tests },

@@ -5,14 +5,50 @@ import { DataProfile, ColumnMetadata, QualityIssue } from '../../src/types/impor
 
 export class DataQualityService {
   public static async profile(
-    sessionId: string,
+    sessionOrStoreKey: string,
     schema: string,
     table: string,
     isImported: boolean
   ): Promise<DataProfile> {
-    const totalRows = await this.getRowCount(sessionId, schema, table, isImported);
+    if (isImported) {
+      const uds = UnifiedDataLayer.getInstance();
+      const dataset = uds.findDataset(sessionOrStoreKey, table);
+
+      if (!dataset) {
+        // Check if raw table exists directly in store
+        try {
+          const check = await uds.executeQuery(sessionOrStoreKey, `SELECT COUNT(*) as cnt FROM "${table}"`);
+          const totalRows = Number(check.rows[0]?.cnt) || 0;
+          const sampleSize = 10000;
+          const { columns, rows } = await this.getSample(sessionOrStoreKey, schema, table, true, sampleSize);
+          const baseProfile = DataProfiler.profile(`${schema}.${table}`, table, columns, rows, sampleSize);
+          baseProfile.totalRows = totalRows;
+          return this.enrichProfile(baseProfile, rows);
+        } catch {
+          throw new Error(`Imported dataset '${table}' was not found in the active workspace. Please ensure the dataset is imported.`);
+        }
+      }
+
+      const physicalTableName = dataset.tableName;
+      const totalRows = dataset.rowCount;
+      const sampleSize = 10000;
+      const { columns, rows } = await this.getSample(sessionOrStoreKey, schema, physicalTableName, true, sampleSize, dataset);
+
+      const baseProfile = DataProfiler.profile(
+        dataset.datasetId,
+        dataset.name,
+        columns,
+        rows,
+        sampleSize
+      );
+
+      baseProfile.totalRows = totalRows;
+      return this.enrichProfile(baseProfile, rows);
+    }
+
+    const totalRows = await this.getRowCount(sessionOrStoreKey, schema, table, isImported);
     const sampleSize = 10000;
-    const { columns, rows } = await this.getSample(sessionId, schema, table, isImported, sampleSize);
+    const { columns, rows } = await this.getSample(sessionOrStoreKey, schema, table, isImported, sampleSize);
 
     const baseProfile = DataProfiler.profile(
       `${schema}.${table}`,
@@ -29,9 +65,10 @@ export class DataQualityService {
   private static async getRowCount(sessionId: string, schema: string, table: string, isImported: boolean): Promise<number> {
     if (isImported) {
       const uds = UnifiedDataLayer.getInstance();
-      const dataset = uds.getDatasets(sessionId).find(ds => ds.tableName === table);
+      const dataset = uds.findDataset(sessionId, table);
       if (dataset) return dataset.rowCount;
-      const res = await uds.executeQuery(sessionId, `SELECT COUNT(*) as cnt FROM "${table}"`);
+      const physicalTable = dataset ? dataset.tableName : table;
+      const res = await uds.executeQuery(sessionId, `SELECT COUNT(*) as cnt FROM "${physicalTable}"`);
       return Number(res.rows[0]?.cnt) || 0;
     } else {
       const adapter = ConnectionManager.getInstance().getAdapter(sessionId);
@@ -43,17 +80,25 @@ export class DataQualityService {
     }
   }
 
-  private static async getSample(sessionId: string, schema: string, table: string, isImported: boolean, limit: number): Promise<{ columns: ColumnMetadata[], rows: Record<string, unknown>[] }> {
+  private static async getSample(
+    sessionId: string,
+    schema: string,
+    table: string,
+    isImported: boolean,
+    limit: number,
+    existingDataset?: any
+  ): Promise<{ columns: ColumnMetadata[]; rows: Record<string, unknown>[] }> {
     if (isImported) {
       const uds = UnifiedDataLayer.getInstance();
-      const dataset = uds.getDatasets(sessionId).find(ds => ds.tableName === table);
+      const dataset = existingDataset || uds.findDataset(sessionId, table);
+      const physicalTable = dataset ? dataset.tableName : table;
       
-      const res = await uds.executeQuery(sessionId, `SELECT * FROM "${table}" LIMIT ${limit}`);
+      const res = await uds.executeQuery(sessionId, `SELECT * FROM "${physicalTable}" LIMIT ${limit}`);
       
       let columns: ColumnMetadata[];
-      if (dataset && dataset.columns.length > 0) {
+      if (dataset && dataset.columns && dataset.columns.length > 0) {
         columns = res.columns.map(c => {
-          const matched = dataset.columns.find(dc => dc.name === c.name);
+          const matched = dataset.columns.find((dc: any) => dc.name === c.name);
           return {
             name: c.name,
             dataType: matched ? matched.dataType : this.mapDataType(c.dataType),

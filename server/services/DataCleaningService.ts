@@ -167,6 +167,7 @@ export class DataCleaningService {
       columns: chunkRes.columns,
       rows: chunkRes.cleanedRows,
       fileSize: source.fileSize,
+      workspaceId: source.workspaceId,
       jobId: pipelineMetadata?.jobId
     });
 
