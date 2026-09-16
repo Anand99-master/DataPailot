@@ -13,6 +13,7 @@ import { runSqlSnippetsTests } from './testSqlSnippets';
 import { runPerformanceAnalyzerTests } from './testPerformanceAnalyzer';
 import { runImportWorkflowTests } from './testImportWorkflow';
 import { runVisualizationImportIntegrationTests } from './testVisualizationImportIntegration';
+import { runDatabaseVisualizationIntegrationTests } from './testDatabaseVisualizationIntegration';
 import { runExcelExportTests } from './testExcelExport';
 import { runDataQualityTests } from './testDataQuality';
 import { runDataQualitySelectionTests } from './testDataQualitySelection';
@@ -54,6 +55,7 @@ const suites: TestGroup[] = [
   { name: '12. PHASE 12 COMPREHENSIVE MATRIX', runner: runComprehensiveTestMatrix },
   { name: '13. DATA IMPORT & UNIFIED DATA LAYER', runner: runImportWorkflowTests },
   { name: '14. IMPORTED DATASET VISUALIZATION INTEGRATION', runner: runVisualizationImportIntegrationTests },
+  { name: '14b. DATABASE TABLE VISUALIZATION & MULTI-SOURCE MATRIX', runner: runDatabaseVisualizationIntegrationTests },
   { name: '15. EXCEL (XLSX) QUERY RESULT EXPORT', runner: runExcelExportTests },
   { name: '16. DATA QUALITY & PROFILING 2.0', runner: runDataQualityTests },
   { name: '16b. DATA QUALITY IMPORT & CLEANED DATASET INTEGRATION', runner: runDataQualityImportIntegrationTests },

@@ -137,8 +137,8 @@ export class AiCleaningService {
     const highConfidenceCount = sortedRecommendations.filter(r => r.confidence === 'High').length;
     const mediumConfidenceCount = sortedRecommendations.filter(r => r.confidence === 'Medium').length;
     const lowConfidenceCount = sortedRecommendations.filter(r => r.confidence === 'Low').length;
-    const criticalIssuesCount = profile.issues.filter(i => i.severity === 'Critical').length;
-    const warningsCount = profile.issues.filter(i => i.severity === 'Warning').length;
+    const criticalIssuesCount = (profile.issues || []).filter(i => i.severity === 'Critical').length;
+    const warningsCount = (profile.issues || []).filter(i => i.severity === 'Warning').length;
 
     return {
       datasetId: dataset.datasetId,
@@ -172,9 +172,9 @@ export class AiCleaningService {
     const source = await DataCleaningService.getSourceInfo(sessionId, datasetId);
 
     // 1. Original Profile
-    const originalProfile = source.profile || (source.isDatabaseTable
-      ? await DataQualityService.profile(sessionId, source.schema, source.tableName, false)
-      : await DataQualityService.profile(sessionId, 'imported', source.tableName, true));
+    const originalProfile = source.isDatabaseTable
+      ? await DataQualityService.profile(sessionId, source.schema, source.tableName, true)
+      : await DataQualityService.profile(sessionId, 'imported', source.tableName, true);
 
     // 2. Preview pipeline execution to compute actual previewed quality
     const previewResult = await DataCleaningService.previewPipeline(
@@ -196,6 +196,12 @@ export class AiCleaningService {
       );
       if (!stillPresent) {
         resolvedIssues.push(`${bIssue.column !== 'TABLE_LEVEL' ? `[${bIssue.column}] ` : ''}${bIssue.issue}`);
+      }
+    }
+
+    if ((originalProfile.duplicateRowCount || 0) > 0 && (!afterQuality.duplicateRowCount || afterQuality.duplicateRowCount === 0)) {
+      if (!resolvedIssues.some(r => r.toLowerCase().includes('duplicate'))) {
+        resolvedIssues.push('Duplicate rows resolved');
       }
     }
 

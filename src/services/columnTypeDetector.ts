@@ -215,4 +215,38 @@ export class ColumnTypeDetector {
 
     return 'text';
   }
+
+  /**
+   * Introspects table schema metadata columns (without needing query execution) to detect semantic types
+   */
+  public static fromTableColumns(
+    columns: Array<{ name: string; dataType: string; isNullable?: boolean }>
+  ): DetectedColumn[] {
+    return columns.map(col => {
+      const rawType = (col.dataType || '').toLowerCase().trim();
+      let semanticType = this.deduceFromDbType(rawType);
+      if (semanticType === 'unknown') {
+        semanticType = 'text';
+      }
+
+      const isNumeric = semanticType === 'integer' || semanticType === 'numeric';
+      const isDateOrTime = semanticType === 'date' || semanticType === 'timestamp';
+      const isBoolean = semanticType === 'boolean';
+      const isCategorical = !isNumeric && !isDateOrTime && !isBoolean;
+
+      return {
+        name: col.name,
+        dataType: col.dataType || 'text',
+        semanticType,
+        isNumeric,
+        isDateOrTime,
+        isCategorical,
+        isBoolean,
+        isNullable: col.isNullable ?? true,
+        distinctCount: isCategorical ? 10 : 100,
+        nullCount: 0,
+        sampleValues: []
+      };
+    });
+  }
 }

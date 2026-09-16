@@ -147,6 +147,7 @@ export class VisualizationQueryBuilder {
    */
   public static buildQuery(options: AnalyticalQueryOptions): string {
     const {
+      schema,
       tableName,
       dimension,
       measure,
@@ -157,7 +158,9 @@ export class VisualizationQueryBuilder {
       dialect = 'sqlite'
     } = options;
 
-    const safeTable = this.quoteIdentifier(tableName, dialect);
+    const safeTable = schema && schema !== 'imported'
+      ? `${this.quoteIdentifier(schema, dialect)}.${this.quoteIdentifier(tableName, dialect)}`
+      : this.quoteIdentifier(tableName, dialect);
     const aggUpper = (aggregation || 'none').toUpperCase();
 
     // 1. KPI Card View
@@ -178,7 +181,19 @@ export class VisualizationQueryBuilder {
       const limitNum = typeof limit === 'number' ? limit : 500;
 
       if (xCol && yCol) {
+        if (dialect === 'mssql') {
+          return `SELECT TOP ${limitNum} ${xCol} AS ${xCol}, ${yCol} AS ${yCol} FROM ${safeTable} WHERE ${xCol} IS NOT NULL AND ${yCol} IS NOT NULL;`;
+        }
+        if (dialect === 'oracle') {
+          return `SELECT ${xCol} AS ${xCol}, ${yCol} AS ${yCol} FROM ${safeTable} WHERE ${xCol} IS NOT NULL AND ${yCol} IS NOT NULL FETCH FIRST ${limitNum} ROWS ONLY;`;
+        }
         return `SELECT ${xCol} AS ${xCol}, ${yCol} AS ${yCol} FROM ${safeTable} WHERE ${xCol} IS NOT NULL AND ${yCol} IS NOT NULL LIMIT ${limitNum};`;
+      }
+      if (dialect === 'mssql') {
+        return `SELECT TOP ${limitNum} * FROM ${safeTable};`;
+      }
+      if (dialect === 'oracle') {
+        return `SELECT * FROM ${safeTable} FETCH FIRST ${limitNum} ROWS ONLY;`;
       }
       return `SELECT * FROM ${safeTable} LIMIT ${limitNum};`;
     }
@@ -187,9 +202,22 @@ export class VisualizationQueryBuilder {
     if (chartType === 'histogram') {
       const histCol = measure || dimension;
       const safeHist = histCol ? this.quoteIdentifier(histCol, dialect) : '';
+      const safeValAlias = this.quoteIdentifier('value', dialect);
       const limitNum = typeof limit === 'number' ? limit : 1000;
       if (safeHist) {
-        return `SELECT ${safeHist} AS "value" FROM ${safeTable} WHERE ${safeHist} IS NOT NULL LIMIT ${limitNum};`;
+        if (dialect === 'mssql') {
+          return `SELECT TOP ${limitNum} ${safeHist} AS ${safeValAlias} FROM ${safeTable} WHERE ${safeHist} IS NOT NULL;`;
+        }
+        if (dialect === 'oracle') {
+          return `SELECT ${safeHist} AS ${safeValAlias} FROM ${safeTable} WHERE ${safeHist} IS NOT NULL FETCH FIRST ${limitNum} ROWS ONLY;`;
+        }
+        return `SELECT ${safeHist} AS ${safeValAlias} FROM ${safeTable} WHERE ${safeHist} IS NOT NULL LIMIT ${limitNum};`;
+      }
+      if (dialect === 'mssql') {
+        return `SELECT TOP ${limitNum} * FROM ${safeTable};`;
+      }
+      if (dialect === 'oracle') {
+        return `SELECT * FROM ${safeTable} FETCH FIRST ${limitNum} ROWS ONLY;`;
       }
       return `SELECT * FROM ${safeTable} LIMIT ${limitNum};`;
     }
@@ -197,6 +225,12 @@ export class VisualizationQueryBuilder {
     // 4. Tabular View (without grouping if no dimension or raw requested)
     if (chartType === 'table' && !dimension) {
       const limitNum = typeof limit === 'number' ? limit : 100;
+      if (dialect === 'mssql') {
+        return `SELECT TOP ${limitNum} * FROM ${safeTable};`;
+      }
+      if (dialect === 'oracle') {
+        return `SELECT * FROM ${safeTable} FETCH FIRST ${limitNum} ROWS ONLY;`;
+      }
       return `SELECT * FROM ${safeTable} LIMIT ${limitNum};`;
     }
 
@@ -227,10 +261,7 @@ export class VisualizationQueryBuilder {
 
       if (parsedLimit !== null) {
         if (dialect === 'mssql') {
-          if (!orderClause) {
-            orderClause = `ORDER BY ${safeAlias} DESC`;
-          }
-          limitClause = `OFFSET 0 ROWS FETCH NEXT ${parsedLimit} ROWS ONLY`;
+          // Handled in SELECT TOP
         } else if (dialect === 'oracle') {
           limitClause = `FETCH FIRST ${parsedLimit} ROWS ONLY`;
         } else {
@@ -238,8 +269,12 @@ export class VisualizationQueryBuilder {
         }
       }
 
+      const selectKeyword = (dialect === 'mssql' && parsedLimit !== null)
+        ? `SELECT TOP ${parsedLimit}`
+        : `SELECT`;
+
       const parts = [
-        `SELECT`,
+        selectKeyword,
         `    ${safeDim},`,
         `    ${expression} AS ${safeAlias}`,
         `FROM ${safeTable}`,
@@ -253,6 +288,12 @@ export class VisualizationQueryBuilder {
 
     // Fallback: simple preview limit
     const limitNum = typeof limit === 'number' ? limit : 50;
+    if (dialect === 'mssql') {
+      return `SELECT TOP ${limitNum} * FROM ${safeTable};`;
+    }
+    if (dialect === 'oracle') {
+      return `SELECT * FROM ${safeTable} FETCH FIRST ${limitNum} ROWS ONLY;`;
+    }
     return `SELECT * FROM ${safeTable} LIMIT ${limitNum};`;
   }
 }
