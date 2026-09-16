@@ -29,6 +29,7 @@ import { runMigrationTests } from './testMigrations';
 import { runDockerAndProductionTests } from './testDockerAndProduction';
 import { runDeploymentSmokeTests } from './testDeploymentSmoke';
 import { runProductionReadinessAudit } from './testProductionReadiness';
+import { runSqlSyntaxHighlighterTests } from './testSqlSyntaxHighlighter';
 
 console.log('\n============================================================');
 console.log('DATAPILOT PHASE 8: AUTOMATED TEST SUITE & REGRESSION MATRIX');
@@ -70,7 +71,8 @@ const suites: TestGroup[] = [
   { name: '24. PHASE 16.4A PRODUCTION MIGRATION SYSTEM', runner: runMigrationTests },
   { name: '25. PHASE 16.4B DOCKER & PRODUCTION RUNTIME', runner: runDockerAndProductionTests },
   { name: '26. PHASE 16.4C DEPLOYMENT SMOKE TESTS', runner: runDeploymentSmokeTests },
-  { name: '27. PHASE 16.5 PRODUCTION READINESS QA AUDIT', runner: runProductionReadinessAudit }
+  { name: '27. PHASE 16.5 PRODUCTION READINESS QA AUDIT', runner: runProductionReadinessAudit },
+  { name: '28. SQL SYNTAX HIGHLIGHTING & TOKEN ENGINE', runner: runSqlSyntaxHighlighterTests }
 ];
 
 async function runAll() {

@@ -51,6 +51,7 @@ interface SqlWorkspaceProps {
   onNavigateToVisualization: () => void;
   onAddToDashboardFromResults: (result: QueryExecutionResult) => void;
   selectedTable: DiscoveredTable | null;
+  dialect?: string;
 }
 
 export const SqlWorkspace: React.FC<SqlWorkspaceProps> = ({
@@ -84,7 +85,8 @@ export const SqlWorkspace: React.FC<SqlWorkspaceProps> = ({
   onFixSqlError,
   onNavigateToVisualization,
   onAddToDashboardFromResults,
-  selectedTable
+  selectedTable,
+  dialect = 'postgresql'
 }) => {
   // Split ratio: percentage of vertical height allocated to the SQL Editor (15% to 85%)
   const [splitRatio, setSplitRatio] = useState<number>(() => {
@@ -241,6 +243,7 @@ export const SqlWorkspace: React.FC<SqlWorkspaceProps> = ({
             onClearHistory={onClearHistory}
             tables={tables}
             tableDetailsCache={tableDetailsCache}
+            dialect={dialect}
           />
         </div>
       </div>

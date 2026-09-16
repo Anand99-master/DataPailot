@@ -1009,6 +1009,7 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
                 onNavigateToVisualization={() => setActiveWorkspaceView('visualization')}
                 onAddToDashboardFromResults={handleAddToDashboardFromResults}
                 selectedTable={selectedTable}
+                dialect={connection?.type || 'postgresql'}
               />
             ) : activeWorkspaceView === 'analysis' ? (
               <div className="flex-1 flex flex-col h-full overflow-hidden">

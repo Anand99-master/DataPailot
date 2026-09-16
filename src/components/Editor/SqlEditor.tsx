@@ -25,6 +25,7 @@ import { getSuggestions, Suggestion } from '../../utils/sqlAutocomplete';
 import { getCaretCoordinates } from '../../utils/caretCoordinates';
 import { SqlAutocomplete } from './SqlAutocomplete';
 import { SnippetLibraryModal } from './SnippetLibraryModal';
+import { SqlSyntaxHighlighter } from './SqlSyntaxHighlighter';
 import { formatSql } from '../../utils/sqlFormatter';
 
 interface SqlEditorProps {
@@ -48,6 +49,7 @@ interface SqlEditorProps {
   isSaved?: boolean;
   isModified?: boolean;
   onRevertQuery?: () => void;
+  dialect?: string;
 }
 
 export const SqlEditor: React.FC<SqlEditorProps> = ({
@@ -70,11 +72,13 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
   onOpenLibrary,
   isSaved,
   isModified,
-  onRevertQuery
+  onRevertQuery,
+  dialect = 'postgresql'
 }) => {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSnippetsOpen, setIsSnippetsOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
 
@@ -177,10 +181,31 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
   };
 
   const handleScroll = () => {
-    if (textareaRef.current && gutterRef.current) {
-      gutterRef.current.scrollTop = textareaRef.current.scrollTop;
+    if (textareaRef.current) {
+      const { scrollTop, scrollLeft } = textareaRef.current;
+      if (gutterRef.current) {
+        gutterRef.current.scrollTop = scrollTop;
+      }
+      if (highlightRef.current) {
+        highlightRef.current.scrollTop = scrollTop;
+        highlightRef.current.scrollLeft = scrollLeft;
+      }
     }
   };
+
+  // Synchronize highlight overlay and line number gutter when query changes
+  useEffect(() => {
+    if (textareaRef.current) {
+      const { scrollTop, scrollLeft } = textareaRef.current;
+      if (highlightRef.current) {
+        highlightRef.current.scrollTop = scrollTop;
+        highlightRef.current.scrollLeft = scrollLeft;
+      }
+      if (gutterRef.current) {
+        gutterRef.current.scrollTop = scrollTop;
+      }
+    }
+  }, [query]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Ctrl + Shift + Space for Snippets
@@ -530,15 +555,34 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
         </div>
 
         {/* SQL Input Area: Constrained to Parent, Horizontal Scroll Only for Long Lines */}
-        <div className="relative flex-1 h-full min-w-0 overflow-hidden">
-          {isAutocompleteOpen && (
-            <SqlAutocomplete
-              suggestions={suggestions}
-              selectedIndex={selectedIndex}
-              onSelect={insertSuggestion}
-              position={caretPos}
+        <div className="relative flex-1 h-full min-w-0 overflow-hidden bg-slate-950">
+          {/* Syntax Highlighting Render Layer (Synchronized scrolling with textarea) */}
+          <div
+            ref={highlightRef}
+            aria-hidden="true"
+            className="absolute inset-0 z-0 overflow-hidden pointer-events-none select-none"
+          >
+            <SqlSyntaxHighlighter
+              sql={query}
+              tables={tables}
+              tableDetailsCache={tableDetailsCache}
+              dialect={dialect}
             />
+          </div>
+
+          {/* Autocomplete Popup Layer */}
+          {isAutocompleteOpen && (
+            <div className="relative z-20 pointer-events-auto">
+              <SqlAutocomplete
+                suggestions={suggestions}
+                selectedIndex={selectedIndex}
+                onSelect={insertSuggestion}
+                position={caretPos}
+              />
+            </div>
           )}
+
+          {/* Editable Transparent Textarea with Visible Caret & Selection */}
           <textarea
             ref={textareaRef}
             id="sql-query-input"
@@ -550,7 +594,8 @@ export const SqlEditor: React.FC<SqlEditorProps> = ({
             onScroll={handleScroll}
             placeholder="-- Write your read-only SQL query here (e.g. SELECT * FROM customers LIMIT 50;)"
             spellCheck={false}
-            className="w-full h-full p-3 bg-transparent text-slate-200 placeholder-slate-600 resize-none focus:outline-hidden leading-5 font-mono selection:bg-emerald-500/30 overflow-auto whitespace-pre"
+            style={{ tabSize: 2 }}
+            className="relative z-10 w-full h-full p-3 bg-transparent text-transparent caret-sky-400 placeholder-slate-600 resize-none focus:outline-hidden leading-5 font-mono text-xs selection:bg-sky-500/30 overflow-auto whitespace-pre border-0"
           />
         </div>
       </div>

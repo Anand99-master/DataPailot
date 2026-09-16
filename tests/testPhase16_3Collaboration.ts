@@ -155,9 +155,11 @@ export async function runPhase16_3Tests() {
     });
 
     // 10. User Profile Editing & Persistence
+    const uniqueEmail = `test.profile.${Date.now()}@datapilot.local`;
+    const updatedEmail = `anand.sharma.${Date.now()}@datapilot.local`;
     const testProfileUser = store.createUser({
       name: 'Initial Name',
-      email: 'initial.user@datapilot.local',
+      email: uniqueEmail,
       password: 'InitialPassword123!',
       jobTitle: 'Junior Analyst',
       role: 'ANALYST'
@@ -166,7 +168,7 @@ export async function runPhase16_3Tests() {
     const updatedUser = store.updateUserProfile(testProfileUser.id, {
       name: 'Anand Sharma',
       jobTitle: 'Data Analyst',
-      email: 'anand.sharma@datapilot.local'
+      email: updatedEmail
     });
 
     const retrievedUser = store.getUserById(testProfileUser.id);
@@ -177,7 +179,7 @@ export async function runPhase16_3Tests() {
         retrievedUser &&
         retrievedUser.name === 'Anand Sharma' &&
         retrievedUser.jobTitle === 'Data Analyst' &&
-        retrievedUser.email === 'anand.sharma@datapilot.local'
+        retrievedUser.email === updatedEmail
       )
     });
 
