@@ -201,12 +201,25 @@ export class CollaborationApiClient {
     return res.json();
   }
 
-  public static async deleteProject(id: string): Promise<any> {
+  public static async updateProject(id: string, name: string, description?: string): Promise<{ success: boolean; project?: Project; error?: string }> {
+    const res = await fetch(`/api/projects/${id}`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ name, description })
+    });
+    return res.json();
+  }
+
+  public static async archiveProject(id: string): Promise<any> {
     const res = await fetch(`/api/projects/${id}`, {
       method: 'DELETE',
       headers: this.getHeaders()
     });
     return res.json();
+  }
+
+  public static async deleteProject(id: string): Promise<any> {
+    return this.archiveProject(id);
   }
 
   // ==========================================
