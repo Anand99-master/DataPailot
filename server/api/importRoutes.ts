@@ -9,6 +9,7 @@ import { ExcelParser } from '../import/ExcelParser';
 import { JsonParser } from '../import/JsonParser';
 import { UnifiedDataLayer } from '../import/UnifiedDataLayer';
 import { ExportFormat } from '../../src/types/import';
+import { requireAuth, requirePermission } from '../middleware/authMiddleware';
 
 export const importRoutes = Router();
 const unifiedDataLayer = UnifiedDataLayer.getInstance();
@@ -125,7 +126,7 @@ importRoutes.post('/validate-and-preview', async (req: Request, res: Response) =
  * POST /api/import/confirm
  * Fully parses, profiles, and registers the imported dataset in the Unified Data Layer
  */
-importRoutes.post('/confirm', async (req: Request, res: Response) => {
+importRoutes.post('/confirm', requireAuth, requirePermission('dataset.create'), async (req: Request, res: Response) => {
   try {
     const sessionId = getSessionId(req, res);
     const {

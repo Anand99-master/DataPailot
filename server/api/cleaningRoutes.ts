@@ -6,6 +6,7 @@ import { Logger } from '../utils/logger';
 import { DataCleaningService } from '../services/DataCleaningService';
 import { AiCleaningService } from '../ai/AiCleaningService';
 import { ExportFormat } from '../../src/types/import';
+import { requireAuth, requirePermission } from '../middleware/authMiddleware';
 
 export const cleaningRoutes = Router();
 
@@ -151,7 +152,7 @@ cleaningRoutes.post('/preview', async (req: Request, res: Response) => {
  * POST /api/cleaning/save
  * Applies the transformation pipeline and saves as a brand new versioned dataset in Unified Data Layer
  */
-cleaningRoutes.post('/save', async (req: Request, res: Response) => {
+cleaningRoutes.post('/save', requireAuth, requirePermission('pipeline.create'), async (req: Request, res: Response) => {
   try {
     const storeKey = getSessionDatasetStoreKey(req, res);
     const { datasetId, newDatasetName, steps, pipelineMetadata } = req.body;

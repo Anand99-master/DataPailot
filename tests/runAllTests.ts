@@ -31,6 +31,7 @@ import { runDeploymentSmokeTests } from './testDeploymentSmoke';
 import { runProductionReadinessAudit } from './testProductionReadiness';
 import { runSqlSyntaxHighlighterTests } from './testSqlSyntaxHighlighter';
 import { runVisualizationDatasetBugFixTests } from './testVisualizationDatasetBugFix';
+import { runRbacEnforcementTests } from './testRbacEnforcement';
 
 console.log('\n============================================================');
 console.log('DATAPILOT PHASE 8: AUTOMATED TEST SUITE & REGRESSION MATRIX');
@@ -74,7 +75,8 @@ const suites: TestGroup[] = [
   { name: '26. PHASE 16.4C DEPLOYMENT SMOKE TESTS', runner: runDeploymentSmokeTests },
   { name: '27. PHASE 16.5 PRODUCTION READINESS QA AUDIT', runner: runProductionReadinessAudit },
   { name: '28. SQL SYNTAX HIGHLIGHTING & TOKEN ENGINE', runner: runSqlSyntaxHighlighterTests },
-  { name: '29. VISUALIZATION DATASET SCHEMA REVALIDATION & BUG FIX', runner: runVisualizationDatasetBugFixTests }
+  { name: '29. VISUALIZATION DATASET SCHEMA REVALIDATION & BUG FIX', runner: runVisualizationDatasetBugFixTests },
+  { name: '30. RBAC & PERMISSION ENFORCEMENT', runner: runRbacEnforcementTests }
 ];
 
 async function runAll() {
