@@ -41,6 +41,79 @@ export function authMiddleware(req: Request, _res: Response, next: NextFunction)
   const rawProjId = (req.headers['x-project-id'] as string) || (req.query.projectId as string);
   const headerProjId = rawProjId && rawProjId !== 'null' && rawProjId !== 'undefined' ? rawProjId.trim() : undefined;
 
+  const isDemoEnabled = process.env.DEMO_MODE === 'true' || (process.env.NODE_ENV !== 'production' && process.env.DEMO_MODE !== 'false');
+  const demoRoleHeader = req.headers['x-demo-role'] as string | undefined;
+
+  if (isDemoEnabled && demoRoleHeader) {
+    let demoUserId = 'usr_admin';
+    let targetRole: UserRole = 'OWNER';
+    const norm = demoRoleHeader.toLowerCase().trim();
+    if (norm === 'editor') {
+      demoUserId = 'usr_editor';
+      targetRole = 'EDITOR';
+    } else if (norm === 'analyst') {
+      demoUserId = 'usr_analyst';
+      targetRole = 'ANALYST';
+    } else if (norm === 'viewer') {
+      demoUserId = 'usr_viewer';
+      targetRole = 'VIEWER';
+    } else if (norm === 'admin' || norm === 'owner') {
+      demoUserId = 'usr_admin';
+      targetRole = 'OWNER';
+    }
+
+    let user = token ? store.getUserById(store.getSessionByToken(token)?.userId || '') : null;
+    if (!user) {
+      user = store.getUserById(demoUserId) || store.getUserById('usr_admin') || {
+        id: demoUserId,
+        name: 'Alex Rivera',
+        email: `${norm}@datapilot.io`,
+        jobTitle: 'Data Professional',
+        status: 'active',
+        role: targetRole,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    try {
+      const member = store.getWorkspaceMember(headerWsId, user.id);
+      if (!member) {
+        store.addOrInviteMember(headerWsId, user.id, targetRole);
+      } else {
+        store.updateMemberRole(headerWsId, user.id, targetRole);
+      }
+    } catch {
+      // ignore
+    }
+
+    const permissions = PermissionService.getPermissionsForRole(targetRole);
+
+    req.authContext = {
+      user: { ...user, role: targetRole },
+      session: token ? (store.getSessionByToken(token) || {
+        id: `ses_demo_${norm}`,
+        userId: user.id,
+        token,
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        createdAt: new Date().toISOString(),
+        lastAccessedAt: new Date().toISOString()
+      }) : {
+        id: `ses_demo_${norm}`,
+        userId: user.id,
+        token: `dev_token_${norm}`,
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        createdAt: new Date().toISOString(),
+        lastAccessedAt: new Date().toISOString()
+      },
+      workspaceId: headerWsId,
+      projectId: headerProjId || null,
+      memberRole: targetRole,
+      permissions
+    };
+    return next();
+  }
+
   if (token) {
     const session = store.getSessionByToken(token);
     if (session) {
@@ -72,44 +145,6 @@ export function authMiddleware(req: Request, _res: Response, next: NextFunction)
         };
         return next();
       }
-    }
-  }
-
-  // Fallback demo role header or development fallback context when no valid token provided
-  const demoRoleHeader = req.headers['x-demo-role'] as string | undefined;
-  if (demoRoleHeader) {
-    let demoUserId = 'usr_admin';
-    let targetRole: UserRole = 'OWNER';
-    const norm = demoRoleHeader.toLowerCase().trim();
-    if (norm === 'analyst') {
-      demoUserId = 'usr_analyst';
-      targetRole = 'ANALYST';
-    } else if (norm === 'viewer') {
-      demoUserId = 'usr_viewer';
-      targetRole = 'VIEWER';
-    } else if (norm === 'admin' || norm === 'owner') {
-      demoUserId = 'usr_admin';
-      targetRole = 'OWNER';
-    }
-
-    const demoUser = store.getUserById(demoUserId) || store.getUserById('usr_admin');
-    if (demoUser) {
-      req.authContext = {
-        user: { ...demoUser, role: targetRole },
-        session: {
-          id: `ses_demo_${norm}`,
-          userId: demoUser.id,
-          token: `dev_token_${norm}`,
-          expiresAt: new Date(Date.now() + 86400000).toISOString(),
-          createdAt: new Date().toISOString(),
-          lastAccessedAt: new Date().toISOString()
-        },
-        workspaceId: headerWsId || 'ws_primary',
-        projectId: headerProjId || null,
-        memberRole: targetRole,
-        permissions: PermissionService.getPermissionsForRole(targetRole)
-      };
-      return next();
     }
   }
 

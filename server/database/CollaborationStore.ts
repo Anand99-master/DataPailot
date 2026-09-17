@@ -793,9 +793,9 @@ ORDER BY 1 DESC;`,
     return this.getWorkspaceMember(workspaceId, userId)!;
   }
 
-  public updateMemberRole(workspaceId: string, memberId: string, role: UserRole): WorkspaceMember | null {
-    this.db.prepare('UPDATE workspace_members SET role = ? WHERE id = ? AND workspace_id = ?').run(role, memberId, workspaceId);
-    const row = this.db.prepare('SELECT user_id as userId FROM workspace_members WHERE id = ?').get(memberId) as any;
+  public updateMemberRole(workspaceId: string, memberIdOrUserId: string, role: UserRole): WorkspaceMember | null {
+    this.db.prepare('UPDATE workspace_members SET role = ? WHERE (id = ? OR user_id = ?) AND workspace_id = ?').run(role, memberIdOrUserId, memberIdOrUserId, workspaceId);
+    const row = this.db.prepare('SELECT user_id as userId FROM workspace_members WHERE (id = ? OR user_id = ?) AND workspace_id = ?').get(memberIdOrUserId, memberIdOrUserId, workspaceId) as any;
     if (row) return this.getWorkspaceMember(workspaceId, row.userId);
     return null;
   }
