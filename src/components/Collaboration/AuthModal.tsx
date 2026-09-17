@@ -26,8 +26,11 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, defaultTab = 'login' }) => {
-  const { user, login, register, logout, role, switchDemoUser, updateProfile } = useCollaboration();
+  const { user, login, register, logout, role, switchDemoUser, updateProfile, activeWorkspace } = useCollaboration();
   const [tab, setTab] = useState<'login' | 'register' | 'profile'>(defaultTab);
+
+  const metaEnv = (import.meta as any).env || {};
+  const isDemoMode = metaEnv.VITE_DEMO_MODE !== 'false' && !(metaEnv.PROD && metaEnv.VITE_DEMO_MODE !== 'true');
 
   // Form states for login/register
   const [email, setEmail] = useState('');
@@ -390,18 +393,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, defaultTa
                     </button>
                   </div>
 
-                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                    <span className="text-[11px] text-slate-400 font-medium">RBAC Permission Level:</span>
-                    <div className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 border border-indigo-500/30 text-indigo-300">
-                      <Shield className="w-3 h-3 text-indigo-400" />
-                      <span id="user-profile-role-badge">Role: {role}</span>
+                  <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400 font-medium">Current Workspace:</span>
+                      <span className="text-slate-200 font-medium truncate max-w-[200px]" data-testid="user-profile-workspace">
+                        {activeWorkspace?.name || 'Primary Workspace'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-slate-400 font-medium">RBAC Permission Level:</span>
+                      <div className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 border border-indigo-500/30 text-indigo-300">
+                        <Shield className="w-3 h-3 text-indigo-400" />
+                        <span id="user-profile-role-badge">Role: {role}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
 
               {/* Fast Demo Role Switcher */}
-              <div className="p-3.5 rounded-lg bg-slate-950/60 border border-slate-800/80 space-y-2.5">
+              {isDemoMode && (
+                <div className="p-3.5 rounded-lg bg-slate-950/60 border border-slate-800/80 space-y-2.5">
                 <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
                   <span className="flex items-center space-x-1.5 text-slate-300 font-semibold">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400" />
@@ -459,6 +471,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, defaultTa
                   </button>
                 </div>
               </div>
+              )}
 
               <button
                 type="button"
@@ -474,11 +487,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, defaultTa
             </div>
           )}
 
-          {/* Login Form */}
+           {/* Login Form */}
           {!user && tab === 'login' && (
             <div className="space-y-4">
               {/* Quick Persona Fast Login */}
-              <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800/80 space-y-2">
+              {isDemoMode && (
+                <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800/80 space-y-2">
                 <div className="flex items-center space-x-1.5 text-xs text-slate-300 font-medium">
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                   <span>Instant Demo Sign In:</span>
@@ -513,6 +527,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, defaultTa
                   </button>
                 </div>
               </div>
+              )}
 
               <form onSubmit={handleLogin} className="space-y-3.5">
                 <div>

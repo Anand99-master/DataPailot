@@ -36,17 +36,25 @@ router.post('/register', (req: Request, res: Response) => {
       return;
     }
 
+    const requestedRole = (role as UserRole) || 'ANALYST';
+    if (requestedRole === 'OWNER' || requestedRole === 'ADMIN') {
+      res.status(403).json({ success: false, error: 'Cannot register with administrative roles directly. Client role spoofing is rejected.' });
+      return;
+    }
+
+    const assignedRole: UserRole = (requestedRole === 'EDITOR' || requestedRole === 'VIEWER' || requestedRole === 'ANALYST') ? requestedRole : 'ANALYST';
+
     const user = store.createUser({
       name: name.trim(),
       email: email.trim().toLowerCase(),
       password,
-      role: (role as UserRole) || 'ANALYST'
+      role: assignedRole
     });
 
     // Automatically assign user to primary workspace as an active member
     const primaryWs = store.getWorkspaceById('ws_primary');
     if (primaryWs) {
-      store.addOrInviteMember('ws_primary', user.id, (role as UserRole) || 'ANALYST');
+      store.addOrInviteMember('ws_primary', user.id, assignedRole);
     }
 
     const session = store.createSession(user.id, req.ip, req.headers['user-agent']);
@@ -92,6 +100,12 @@ router.post('/register', (req: Request, res: Response) => {
  */
 router.post('/demo-switch', (req: Request, res: Response) => {
   try {
+    const isDemoEnabled = process.env.DEMO_MODE === 'true' || (process.env.NODE_ENV !== 'production' && process.env.DEMO_MODE !== 'false');
+    if (!isDemoEnabled) {
+      res.status(403).json({ success: false, error: 'Demo persona switching is disabled in production / non-demo mode.' });
+      return;
+    }
+
     const { role: reqRole } = req.body;
     const store = CollaborationStore.getInstance();
 

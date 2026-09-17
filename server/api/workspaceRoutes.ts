@@ -262,6 +262,12 @@ router.put('/:id/members/:memberId', requireAuth, requirePermission('member.upda
       return;
     }
 
+    // Protection: User cannot change their own role
+    if (targetMember.userId === req.authContext!.user.id) {
+      res.status(403).json({ success: false, error: 'Users cannot change their own workspace role.' });
+      return;
+    }
+
     // Protection: Only OWNER can change roles to/from OWNER or promote to OWNER
     if (targetMember.role === 'OWNER' && req.authContext!.memberRole !== 'OWNER') {
       res.status(403).json({ success: false, error: 'Only the workspace owner can modify owner roles.' });
