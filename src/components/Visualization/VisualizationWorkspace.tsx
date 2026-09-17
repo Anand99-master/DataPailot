@@ -365,6 +365,44 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
     return detectedColumns;
   }, [dataSourceMode, detectedColumns, databaseTableColumns, datasetColumns]);
 
+  // Revalidate config fields when active schema columns change (e.g. dataset switch)
+  useEffect(() => {
+    if (activeSchemaColumns.length === 0) return;
+    const colNames = new Set(activeSchemaColumns.map(c => c.name));
+
+    let updatedX = config.xAxis;
+    let updatedY = config.yAxis;
+    let needsUpdate = false;
+
+    if (updatedX && updatedX !== 'All Rows' && !colNames.has(updatedX)) {
+      updatedX = '';
+      needsUpdate = true;
+    }
+
+    if (updatedY && updatedY !== 'All Rows' && updatedY !== '*' && !colNames.has(updatedY)) {
+      updatedY = '';
+      needsUpdate = true;
+    }
+
+    const validSecondary = (config.secondaryMeasures || []).filter(m => colNames.has(m));
+    if (validSecondary.length !== (config.secondaryMeasures || []).length) {
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      const newConfig = {
+        ...config,
+        xAxis: updatedX,
+        yAxis: updatedY,
+        secondaryMeasures: validSecondary
+      };
+      setConfig(newConfig);
+      if (!updatedX || !updatedY) {
+        setQueryError(`Selected field is not available in this dataset. Please select another field.`);
+      }
+    }
+  }, [activeSchemaColumns]);
+
   // Execution engine: Runs dialect-aware analytical SQL query
   const executeAnalyticalQuery = useCallback(async (
     targetMode: 'database' | 'imported',
@@ -378,6 +416,34 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
     const dim = targetConfig.xAxis;
     const meas = measureCol !== undefined ? measureCol : (rawSelectedMeasure || targetConfig.yAxis);
     const agg = targetConfig.aggregation || 'count';
+
+    // Validate referenced columns against active schema columns before query generation/execution
+    const availableColNames = new Set(activeSchemaColumns.map(c => c.name));
+
+    if (dim && dim !== 'All Rows' && !availableColNames.has(dim)) {
+      const errMessage = `Selected field '${dim}' is not available in this dataset. Please select another field.`;
+      setQueryError(errMessage);
+      setIsQueryLoading(false);
+      return;
+    }
+
+    if (meas && meas !== 'All Rows' && meas !== '*' && !availableColNames.has(meas)) {
+      const errMessage = `Selected field '${meas}' is not available in this dataset. Please select another field.`;
+      setQueryError(errMessage);
+      setIsQueryLoading(false);
+      return;
+    }
+
+    if (targetConfig.secondaryMeasures) {
+      for (const sm of targetConfig.secondaryMeasures) {
+        if (!availableColNames.has(sm)) {
+          const errMessage = `Selected field '${sm}' is not available in this dataset. Please select another field.`;
+          setQueryError(errMessage);
+          setIsQueryLoading(false);
+          return;
+        }
+      }
+    }
 
     try {
       let sql = '';
