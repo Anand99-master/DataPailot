@@ -20,7 +20,7 @@ export async function runMigrationTests() {
     const initialStatus = runner.status();
     results.push({
       name: '16.4A.1: Migration status discovery on fresh database',
-      passed: initialStatus.length === 6 && initialStatus.every(s => !s.applied)
+      passed: initialStatus.length === 7 && initialStatus.every(s => !s.applied)
     });
 
     // Test 2: Validation on fresh database
@@ -34,7 +34,7 @@ export async function runMigrationTests() {
     const applyResult = runner.up();
     results.push({
       name: '16.4A.3: Apply pending migrations (up)',
-      passed: applyResult.appliedCount === 6
+      passed: applyResult.appliedCount === 7
     });
 
     // Test 4: Post-apply status check
@@ -48,7 +48,7 @@ export async function runMigrationTests() {
     const rollbackResult = runner.down();
     results.push({
       name: '16.4A.5: Rollback latest migration (down)',
-      passed: rollbackResult.rolledBack === '0006'
+      passed: rollbackResult.rolledBack === '0007'
     });
 
     // Test 6: Re-apply rolled back migration
