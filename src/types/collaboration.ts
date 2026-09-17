@@ -10,6 +10,7 @@ export type UserStatus = 'active' | 'suspended' | 'invited';
 export interface User {
   id: string;
   name: string;
+  fullName?: string;
   email: string;
   jobTitle?: string;
   avatar?: string;

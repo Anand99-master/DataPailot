@@ -41,10 +41,13 @@ import { DatasetDetailModal } from './components/Import/DatasetDetailModal';
 import { CollaborationProvider, useCollaboration } from './context/CollaborationContext';
 import { CollaborationApiClient } from './services/collaborationApi';
 import { AuthModal } from './components/Collaboration/AuthModal';
+import { AuthPage } from './components/Collaboration/AuthPage';
+import { DataPilotLogo } from './components/common/DataPilotLogo';
 import { AdminConsoleModal } from './components/Collaboration/AdminConsoleModal';
 import { ActivityFeedDrawer } from './components/Collaboration/ActivityFeedDrawer';
 import { GlobalSearchModal } from './components/Collaboration/GlobalSearchModal';
 import { ReportsWorkspace } from './components/Collaboration/ReportsWorkspace';
+import { Loader2 } from 'lucide-react';
 
 function AppContent() {
   const { activeWorkspace, activeProject, activeProjectId } = useCollaboration();
@@ -1310,10 +1313,32 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
   );
 }
 
+function MainAppRouter() {
+  const { user, isLoadingAuth } = useCollaboration();
+
+  if (isLoadingAuth) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center space-y-4">
+        <DataPilotLogo size="xl" showTagline={true} />
+        <div className="flex items-center space-x-2 text-xs text-slate-400 font-medium">
+          <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+          <span>Verifying secure session & workspace membership...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthPage />;
+  }
+
+  return <AppContent />;
+}
+
 export default function App() {
   return (
     <CollaborationProvider>
-      <AppContent />
+      <MainAppRouter />
     </CollaborationProvider>
   );
 }

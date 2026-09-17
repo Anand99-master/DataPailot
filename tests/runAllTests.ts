@@ -34,6 +34,7 @@ import { runVisualizationDatasetBugFixTests } from './testVisualizationDatasetBu
 import { runRbacEnforcementTests } from './testRbacEnforcement';
 import { runRbacSecurityAuditTests } from './testRbacSecurityAudit';
 import { runRbacRoleSwitchingTests } from './testRbacRoleSwitching';
+import { runRealAuthFoundationTests } from './testRealAuthFoundation';
 
 console.log('\n============================================================');
 console.log('DATAPILOT PHASE 8: AUTOMATED TEST SUITE & REGRESSION MATRIX');
@@ -80,7 +81,8 @@ const suites: TestGroup[] = [
   { name: '29. VISUALIZATION DATASET SCHEMA REVALIDATION & BUG FIX', runner: runVisualizationDatasetBugFixTests },
   { name: '30. RBAC & PERMISSION ENFORCEMENT', runner: runRbacEnforcementTests },
   { name: '31. RBAC SECURITY AUDIT & PRODUCTION HARDENING', runner: runRbacSecurityAuditTests },
-  { name: '32. RBAC ROLE SWITCHING & SYNCHRONIZATION', runner: runRbacRoleSwitchingTests }
+  { name: '32. RBAC ROLE SWITCHING & SYNCHRONIZATION', runner: runRbacRoleSwitchingTests },
+  { name: '33. REAL USER AUTHENTICATION FOUNDATION', runner: runRealAuthFoundationTests }
 ];
 
 async function runAll() {

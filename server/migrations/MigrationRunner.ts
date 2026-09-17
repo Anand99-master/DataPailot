@@ -7,6 +7,7 @@ import { migration0003 } from './versions/0003_resource_shares';
 import { migration0004 } from './versions/0004_reports_snapshots';
 import { migration0005 } from './versions/0005_notifications_activities_audit';
 import { migration0006 } from './versions/0006_queries_dashboards_pipelines';
+import { migration0007 } from './versions/0007_auth_foundation';
 
 export class MigrationRunner {
   private db: DatabaseSync;
@@ -20,7 +21,8 @@ export class MigrationRunner {
       migration0003,
       migration0004,
       migration0005,
-      migration0006
+      migration0006,
+      migration0007
     ].sort((a, b) => a.id.localeCompare(b.id));
   }
 
