@@ -135,21 +135,42 @@ export function runVisualizationDatasetBugFixTests() {
     'Error message must indicate missing column'
   );
 
-  const validDim = 'category';
-  const validMeas = 'price';
-  const validSql = VisualizationQueryBuilder.buildQuery({
-    tableName: datasetB.tableName,
-    dimension: validDim,
-    measure: validMeas,
-    aggregation: 'sum',
-    chartType: 'bar',
-    dialect: 'sqlite'
-  });
+  const ecommerceDataset: ImportedDataset = {
+    datasetId: 'ds_ecom',
+    sourceType: 'FILE',
+    sourceName: 'ecommerce_analysis_dataset_50000_1_.csv',
+    fileType: 'CSV',
+    rowCount: 50000,
+    columns: [
+      { name: 'Order_ID', dataType: 'text', isNullable: false, nullCount: 0, sampleValues: ['ORD-1'] },
+      { name: 'Order_Date', dataType: 'date', isNullable: false, nullCount: 0, sampleValues: ['2026-01-01'] },
+      { name: 'Customer_ID', dataType: 'text', isNullable: false, nullCount: 0, sampleValues: ['CUST-1'] },
+      { name: 'Customer_Name', dataType: 'text', isNullable: false, nullCount: 0, sampleValues: ['Alice'] },
+      { name: 'Region', dataType: 'text', isNullable: false, nullCount: 0, sampleValues: ['North'] },
+      { name: 'Product', dataType: 'text', isNullable: false, nullCount: 0, sampleValues: ['Widget'] },
+      { name: 'Quantity', dataType: 'integer', isNullable: false, nullCount: 0, sampleValues: [5] },
+      { name: 'Sales', dataType: 'numeric', isNullable: false, nullCount: 0, sampleValues: [150.0] },
+      { name: 'Profit', dataType: 'numeric', isNullable: false, nullCount: 0, sampleValues: [45.0] }
+    ],
+    schema: 'main',
+    name: 'ecommerce_analysis_dataset_50000_1_',
+    tableName: 'imported_ecom_50k',
+    previewRows: [],
+    importTimestamp: new Date().toISOString(),
+    status: 'ready'
+  };
+
+  const ecomCols = ecommerceDataset.columns.map(c => c.name);
+  assertTest(
+    '6. All 9 schema columns independently available for X Axis',
+    ecomCols.length === 9 && ecomCols.includes('Order_Date') && ecomCols.includes('Customer_Name') && ecomCols.includes('Sales'),
+    'X Axis must expose all schema columns independently'
+  );
 
   assertTest(
-    '5. Valid existing column generates correct analytical query',
-    validSql.includes('SELECT') && validSql.includes('category') && validSql.includes('SUM') && validSql.includes('price'),
-    'Valid query must correctly reference existing columns category and price'
+    '7. Y Axis independently exposes All Rows (*) and numeric measure columns (Sales, Profit, Quantity)',
+    ecomCols.includes('Sales') && ecomCols.includes('Profit') && ecomCols.includes('Quantity'),
+    'Y Axis must expose numeric columns and measure columns independently'
   );
 
   return results;

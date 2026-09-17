@@ -356,13 +356,13 @@ export const VisualizationWorkspace: React.FC<VisualizationWorkspaceProps> = ({
   }, [effectiveQueryResult, dataSourceMode, databaseTableColumns, datasetColumns]);
 
   const activeSchemaColumns = useMemo(() => {
-    if (dataSourceMode === 'database') {
-      return detectedColumns.length > 0 ? detectedColumns : databaseTableColumns;
+    if (dataSourceMode === 'database' && databaseTableColumns.length > 0) {
+      return databaseTableColumns;
     }
-    if (dataSourceMode === 'imported') {
-      return detectedColumns.length > 0 ? detectedColumns : datasetColumns;
+    if (dataSourceMode === 'imported' && datasetColumns.length > 0) {
+      return datasetColumns;
     }
-    return detectedColumns;
+    return detectedColumns.length > 0 ? detectedColumns : (dataSourceMode === 'database' ? databaseTableColumns : datasetColumns);
   }, [dataSourceMode, detectedColumns, databaseTableColumns, datasetColumns]);
 
   // Revalidate config fields when active schema columns change (e.g. dataset switch)

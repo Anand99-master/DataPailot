@@ -232,6 +232,9 @@ export const ChartConfigPanel: React.FC<ChartConfigPanelProps> = ({
                       </option>
                     ))}
                   </select>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                    Choose a category, date, or compatible field
+                  </p>
                 </div>
               )}
 
@@ -248,11 +251,6 @@ export const ChartConfigPanel: React.FC<ChartConfigPanelProps> = ({
                         ? 'Y Axis (Measure / Count Target)'
                         : 'Y Axis (Measure)'}
                     </label>
-                    {isCount && (
-                      <span className="text-[10px] text-emerald-400 font-medium">
-                        Any column / All Rows
-                      </span>
-                    )}
                   </div>
                   <select
                     id="select-chart-y-axis"
@@ -260,26 +258,23 @@ export const ChartConfigPanel: React.FC<ChartConfigPanelProps> = ({
                     onChange={e => onChangeConfig({ ...config, yAxis: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-md px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500"
                   >
-                    <option value="">{isCount ? '— Select Column to Count —' : '— Select Measure —'}</option>
-                    {isCount && (
-                      <option value="All Rows">All Rows (*)</option>
-                    )}
+                    <option value="">— Select Measure or Count —</option>
+                    <option value="All Rows">All Rows (*)</option>
                     {selectableMeasureColumns.map(col => (
                       <option key={col.name} value={col.name}>
                         {col.name} ({col.semanticType})
                       </option>
                     ))}
                   </select>
-                  {isCount ? (
-                    <p className="text-[10px] text-slate-400 mt-1 leading-tight">
-                      COUNT supports any column type (text, date, numeric, boolean) or All Rows (*).
-                    </p>
-                  ) : isSumOrAvg ? (
-                    <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                  <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                    Choose a measure or count
+                  </p>
+                  {isSumOrAvg ? (
+                    <p className="text-[10px] text-amber-400/90 mt-0.5 leading-tight">
                       {config.aggregation.toUpperCase()} requires a numeric column.
                     </p>
                   ) : isMinOrMax ? (
-                    <p className="text-[10px] text-slate-400 mt-1 leading-tight">
+                    <p className="text-[10px] text-amber-400/90 mt-0.5 leading-tight">
                       {config.aggregation.toUpperCase()} requires a numeric or date column.
                     </p>
                   ) : null}
