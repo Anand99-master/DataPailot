@@ -1,6 +1,14 @@
+<div align="center">
+
 # DataPilot — AI Data Analysis Workspace
 
+<a href="https://github.com/Anand99-master/DataPailot">
+  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&size=24&duration=2800&pause=900&color=4F8CFF&center=true&vCenter=true&width=760&lines=Connect+%E2%80%A2+Explore+%E2%80%A2+Analyze+%E2%80%A2+Visualize;SQL+%2B+AI+%2B+Data+Cleaning+in+One+Workspace;From+Raw+Data+to+Actionable+Insights" alt="DataPilot animated tagline" />
+</a>
+
 > A full-stack workspace for working with data from ingestion and quality analysis through SQL, visualization, dashboards, and AI-assisted analytics.
+
+</div>
 
 [![Version](https://img.shields.io/badge/version-1.0.0-informational)](https://github.com/Anand99-master/DataPailot)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.5.0-339933)](https://nodejs.org/)
