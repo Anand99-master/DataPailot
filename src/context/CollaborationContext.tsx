@@ -60,6 +60,7 @@ interface CollaborationContextType {
   notifications: Notification[];
   activities: ActivityItem[];
   isLoadingAuth: boolean;
+  emailVerificationRequired: boolean;
   can: (permission: Permission) => boolean;
   switchWorkspace: (workspaceId: string) => Promise<void>;
   switchProject: (projectId: string | null) => void;
@@ -68,7 +69,9 @@ interface CollaborationContextType {
   refreshNotifications: () => Promise<void>;
   refreshActivities: () => Promise<void>;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  register: (name: string, email: string, password: string, role?: UserRole) => Promise<{ success: boolean; error?: string }>;
+  register: (name: string, email: string, password: string, role?: UserRole) => Promise<{ success: boolean; error?: string; user?: User; devVerificationToken?: string; devVerificationUrl?: string; emailVerificationRequired?: boolean }>;
+  verifyEmail: (token: string) => Promise<{ success: boolean; error?: string; message?: string; user?: User; expired?: boolean }>;
+  resendVerification: (email?: string) => Promise<{ success: boolean; error?: string; message?: string; devVerificationToken?: string; devVerificationUrl?: string; alreadyVerified?: boolean }>;
   updateProfile: (profile: { name: string; jobTitle?: string; email?: string; avatar?: string }) => Promise<{ success: boolean; error?: string; user?: User }>;
   logout: () => Promise<void>;
   switchDemoUser: (role: 'admin' | 'analyst' | 'viewer') => Promise<void>;
@@ -88,6 +91,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [isLoadingAuth, setIsLoadingAuth] = useState<boolean>(true);
+  const [emailVerificationRequired, setEmailVerificationRequired] = useState<boolean>(false);
 
   // Initialize Auth and Workspace State
   const initAuth = useCallback(async () => {
@@ -102,6 +106,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       if (res.success && (res as any).user) {
         const authData: any = res;
         setUser(authData.user);
+        setEmailVerificationRequired(Boolean(authData.emailVerificationRequired || (authData.user && authData.user.emailVerified === false)));
         setRole(authData.memberRole || authData.user?.role || 'OWNER');
         setPermissions(authData.permissions || []);
 
@@ -116,6 +121,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       } else {
         setUser(null);
+        setEmailVerificationRequired(false);
       }
     } catch (err) {
       console.error('Failed to init auth context', err);
@@ -257,9 +263,38 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
       setRole(res.memberRole || regRole || 'ANALYST');
       setPermissions(res.permissions || []);
       await initAuth();
-      return { success: true };
+      return {
+        success: true,
+        user: res.user,
+        devVerificationToken: res.devVerificationToken,
+        devVerificationUrl: res.devVerificationUrl,
+        emailVerificationRequired: res.emailVerificationRequired
+      };
     }
     return { success: false, error: res.error || 'Registration failed' };
+  };
+
+  const verifyEmail = async (token: string) => {
+    try {
+      const res = await CollaborationApiClient.verifyEmail(token);
+      if (res.success) {
+        if (res.user) {
+          setUser(res.user);
+        }
+        await initAuth();
+      }
+      return res;
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Email verification failed.' };
+    }
+  };
+
+  const resendVerification = async (email?: string) => {
+    try {
+      return await CollaborationApiClient.resendVerification(email);
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to resend verification.' };
+    }
   };
 
   const logout = async () => {
@@ -408,6 +443,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     notifications,
     activities,
     isLoadingAuth,
+    emailVerificationRequired,
     can,
     switchWorkspace,
     switchProject,
@@ -417,6 +453,8 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     refreshActivities,
     login,
     register,
+    verifyEmail,
+    resendVerification,
     updateProfile,
     logout,
     switchDemoUser
@@ -433,6 +471,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     notifications,
     activities,
     isLoadingAuth,
+    emailVerificationRequired,
     can,
     switchWorkspace,
     switchProject,

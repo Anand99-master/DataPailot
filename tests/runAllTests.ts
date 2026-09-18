@@ -35,17 +35,20 @@ import { runRbacEnforcementTests } from './testRbacEnforcement';
 import { runRbacSecurityAuditTests } from './testRbacSecurityAudit';
 import { runRbacRoleSwitchingTests } from './testRbacRoleSwitching';
 import { runRealAuthFoundationTests } from './testRealAuthFoundation';
+import { runPasswordResetTests } from './testPasswordReset';
+import { runEmailVerificationTests } from './testEmailVerification';
+import { runRealEmailDeliveryTests } from './testPhase33RealEmailDelivery';
 
 console.log('\n============================================================');
 console.log('DATAPILOT PHASE 8: AUTOMATED TEST SUITE & REGRESSION MATRIX');
 console.log('============================================================\n');
 
-interface TestGroup {
+export interface TestGroup {
   name: string;
   runner: () => any;
 }
 
-const suites: TestGroup[] = [
+export const suites: TestGroup[] = [
   { name: '0. DATA LINEAGE', runner: runDataLineageTests },
   { name: '0. PERFORMANCE ANALYZER', runner: runPerformanceAnalyzerTests },
   { name: '0. SQL SNIPPETS', runner: runSqlSnippetsTests },
@@ -82,7 +85,10 @@ const suites: TestGroup[] = [
   { name: '30. RBAC & PERMISSION ENFORCEMENT', runner: runRbacEnforcementTests },
   { name: '31. RBAC SECURITY AUDIT & PRODUCTION HARDENING', runner: runRbacSecurityAuditTests },
   { name: '32. RBAC ROLE SWITCHING & SYNCHRONIZATION', runner: runRbacRoleSwitchingTests },
-  { name: '33. REAL USER AUTHENTICATION FOUNDATION', runner: runRealAuthFoundationTests }
+  { name: '33. REAL USER AUTHENTICATION FOUNDATION', runner: runRealAuthFoundationTests },
+  { name: '34. PRODUCTION PASSWORD RESET & RECOVERY', runner: runPasswordResetTests },
+  { name: '35. EMAIL VERIFICATION & LIFECYCLE (PHASE 3.2)', runner: runEmailVerificationTests },
+  { name: '36. REAL EMAIL DELIVERY & SECURITY (PHASE 3.3)', runner: runRealEmailDeliveryTests }
 ];
 
 async function runAll() {

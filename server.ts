@@ -27,6 +27,7 @@ import { isGeminiConfigured, GEMINI_MODEL } from './server/ai/geminiClient';
 import { ConnectionManager } from './server/database/ConnectionManager';
 import { Logger } from './server/utils/logger';
 import { AuditLogger } from './server/utils/auditLogger';
+import { EmailService } from './server/services/email/EmailService';
 
 function validateStartupConfiguration() {
   const env = (process.env.NODE_ENV || 'development').toLowerCase();
@@ -59,6 +60,18 @@ function validateStartupConfiguration() {
     Logger.warn(
       'Gemini AI Assistant is not configured (GEMINI_API_KEY environment secret is not set). Read-only analytical SQL execution and schema introspection remain fully operational.'
     );
+  }
+
+  const emailStatus = EmailService.getInstance().getStatus();
+  if (emailStatus.isConfigured && emailStatus.deliveryMode === 'real') {
+    Logger.info('Email delivery service is configured and operational', {
+      provider: emailStatus.provider,
+      deliveryMode: emailStatus.deliveryMode
+    });
+  } else if (env === 'production') {
+    Logger.warn('Transactional email provider is not configured in production. Verification and password reset emails will fail safely until configured.');
+  } else {
+    Logger.info('Email delivery service running in development fallback mode.');
   }
 }
 

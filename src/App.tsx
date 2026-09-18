@@ -47,10 +47,40 @@ import { AdminConsoleModal } from './components/Collaboration/AdminConsoleModal'
 import { ActivityFeedDrawer } from './components/Collaboration/ActivityFeedDrawer';
 import { GlobalSearchModal } from './components/Collaboration/GlobalSearchModal';
 import { ReportsWorkspace } from './components/Collaboration/ReportsWorkspace';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle, Check } from 'lucide-react';
 
 function AppContent() {
-  const { activeWorkspace, activeProject, activeProjectId } = useCollaboration();
+  const { user, activeWorkspace, activeProject, activeProjectId, emailVerificationRequired, resendVerification } = useCollaboration();
+
+  // Email verification banner state
+  const [isResendingBanner, setIsResendingBanner] = useState(false);
+  const [resendBannerSuccess, setResendBannerSuccess] = useState<string | null>(null);
+  const [bannerCooldown, setBannerCooldown] = useState(0);
+
+  useEffect(() => {
+    if (bannerCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setBannerCooldown(prev => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [bannerCooldown]);
+
+  const handleResendBanner = async () => {
+    if (bannerCooldown > 0 || isResendingBanner) return;
+    setIsResendingBanner(true);
+    setResendBannerSuccess(null);
+    try {
+      const res = await resendVerification();
+      if (res.success) {
+        setResendBannerSuccess(res.message || 'Verification link sent!');
+        setBannerCooldown(60);
+      }
+    } catch {
+      // Ignored
+    } finally {
+      setIsResendingBanner(false);
+    }
+  };
 
   // Connection state
   const [connection, setConnection] = useState<SanitizedConnectionInfo | null>(null);
@@ -944,6 +974,35 @@ SELECT table_name, table_type FROM information_schema.tables WHERE table_schema 
         onOpenActivityFeed={() => setIsActivityFeedOpen(true)}
         onOpenSearch={() => setIsSearchModalOpen(true)}
       />
+
+      {/* Unverified Email Warning Banner */}
+      {user && (user.emailVerified === false || emailVerificationRequired) && (
+        <div className="bg-amber-950/70 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between text-xs text-amber-200 z-30">
+          <div className="flex items-center space-x-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <span>
+              Your email address (<strong>{user.email}</strong>) is not verified. Please verify your email to unlock project and workspace creation.
+            </span>
+          </div>
+          <div className="flex items-center space-x-3">
+            {resendBannerSuccess ? (
+              <span className="text-emerald-400 text-xs flex items-center space-x-1 font-medium">
+                <Check className="w-3.5 h-3.5" />
+                <span>{resendBannerSuccess}</span>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleResendBanner}
+                disabled={isResendingBanner || bannerCooldown > 0}
+                className="text-amber-300 hover:text-white underline font-semibold disabled:opacity-50 cursor-pointer"
+              >
+                {isResendingBanner ? 'Sending...' : bannerCooldown > 0 ? `Resend in ${bannerCooldown}s` : 'Resend Verification Link'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Workspace Body: 3-Panel Layout + Optional Right AI Panel */}
       <div className="flex-1 flex overflow-hidden">

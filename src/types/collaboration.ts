@@ -19,6 +19,8 @@ export interface User {
   createdAt: string;
   updatedAt: string;
   lastLoginAt?: string;
+  emailVerified?: boolean;
+  emailVerifiedAt?: string | null;
 }
 
 export interface Session {

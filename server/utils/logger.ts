@@ -57,6 +57,8 @@ export class Logger {
         sanitized[key] = '[REDACTED]';
       } else if (lowerKey === 'sql' || lowerKey === 'query') {
         sanitized[key] = typeof value === 'string' ? this.sanitizeSql(value) : '[INVALID_SQL_TYPE]';
+      } else if (typeof value === 'string' && /[?&](?:token|key|apikey|password|secret)=/i.test(value)) {
+        sanitized[key] = value.replace(/([?&](?:token|key|apikey|password|secret)=)[^&#\s]+/gi, '$1[REDACTED]');
       } else {
         sanitized[key] = value;
       }

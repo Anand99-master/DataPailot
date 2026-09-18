@@ -230,3 +230,28 @@ export function requirePermission(permission: Permission) {
     next();
   };
 }
+
+/**
+ * Email verification guard middleware
+ */
+export function requireVerifiedEmail(req: Request, res: Response, next: NextFunction): void {
+  if (!req.authContext || !req.authContext.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Authentication required.'
+    });
+    return;
+  }
+
+  if (!req.authContext.user.emailVerified) {
+    res.status(403).json({
+      success: false,
+      error: 'Email verification required. Please verify your email to access this resource.',
+      code: 'EMAIL_VERIFICATION_REQUIRED'
+    });
+    return;
+  }
+
+  next();
+}
+

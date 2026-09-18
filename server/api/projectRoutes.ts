@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { CollaborationStore } from '../database/CollaborationStore';
-import { requireAuth, requirePermission } from '../middleware/authMiddleware';
+import { requireAuth, requirePermission, requireVerifiedEmail } from '../middleware/authMiddleware';
 
 const router = Router();
 
@@ -22,7 +22,7 @@ router.get('/', requireAuth, (req: Request, res: Response) => {
 /**
  * POST /api/projects
  */
-router.post('/', requireAuth, (req: Request, res: Response) => {
+router.post('/', requireAuth, requireVerifiedEmail, (req: Request, res: Response) => {
   try {
     const { name, description } = req.body;
     if (!name || typeof name !== 'string' || name.trim().length < 2) {

@@ -211,6 +211,51 @@ export class CollaborationApiClient {
     return res.json();
   }
 
+  public static async forgotPassword(email: string): Promise<any> {
+    const res = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ email })
+    });
+    return res.json();
+  }
+
+  public static async resetPassword(token: string, newPassword: string): Promise<any> {
+    const res = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ token, newPassword })
+    });
+    return res.json();
+  }
+
+  public static async verifyResetToken(token: string): Promise<any> {
+    const res = await fetch('/api/auth/verify-reset-token', {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ token })
+    });
+    return res.json();
+  }
+
+  public static async verifyEmail(token: string): Promise<any> {
+    const res = await fetch('/api/auth/verify-email', {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ token })
+    });
+    return res.json();
+  }
+
+  public static async resendVerification(email?: string): Promise<any> {
+    const res = await fetch('/api/auth/resend-verification', {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ email })
+    });
+    return res.json();
+  }
+
   public static async listAllUsers(): Promise<{ success: boolean; users: User[] }> {
     const res = await fetch('/api/users', { headers: this.getHeaders() });
     return res.json();

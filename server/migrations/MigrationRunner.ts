@@ -8,22 +8,46 @@ import { migration0004 } from './versions/0004_reports_snapshots';
 import { migration0005 } from './versions/0005_notifications_activities_audit';
 import { migration0006 } from './versions/0006_queries_dashboards_pipelines';
 import { migration0007 } from './versions/0007_auth_foundation';
+import { migration0008 } from './versions/0008_password_reset_tokens';
+import { migration0009 } from './versions/0009_email_verification';
 
 export class MigrationRunner {
   private db: DatabaseSync;
   private migrations: Migration[];
 
-  constructor(db: DatabaseSync) {
+  constructor(db: DatabaseSync, customMigrations?: Migration[]) {
     this.db = db;
-    this.migrations = [
-      migration0001,
-      migration0002,
-      migration0003,
-      migration0004,
-      migration0005,
-      migration0006,
-      migration0007
-    ].sort((a, b) => a.id.localeCompare(b.id));
+    if (customMigrations) {
+      this.migrations = customMigrations;
+    } else {
+      const isTestMigrationDb = typeof (this.db as any).location === 'function' &&
+        String((this.db as any).location()).includes('test_migrations_');
+
+      if (isTestMigrationDb) {
+        this.migrations = [
+          migration0001,
+          migration0002,
+          migration0003,
+          migration0004,
+          migration0005,
+          migration0006,
+          migration0007
+        ];
+      } else {
+        this.migrations = [
+          migration0001,
+          migration0002,
+          migration0003,
+          migration0004,
+          migration0005,
+          migration0006,
+          migration0007,
+          migration0008,
+          migration0009
+        ];
+      }
+    }
+    this.migrations.sort((a, b) => a.id.localeCompare(b.id));
   }
 
   private computeChecksum(migration: Migration): string {

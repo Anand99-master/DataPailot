@@ -24,6 +24,18 @@ import { Logger } from '../utils/logger';
 export interface UserAuthRecord extends User {
   passwordHash: string;
   salt: string;
+  emailVerificationTokenHash?: string | null;
+  emailVerificationExpiresAt?: string | null;
+}
+
+export interface PasswordResetTokenRecord {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+  used: number;
+  usedAt?: string;
+  createdAt: string;
 }
 
 export class CollaborationStore {
@@ -72,7 +84,10 @@ export class CollaborationStore {
         role TEXT NOT NULL DEFAULT 'ANALYST',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        last_login_at TEXT
+        last_login_at TEXT,
+        email_verified_at TEXT,
+        email_verification_token_hash TEXT,
+        email_verification_expires_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS sessions (
@@ -282,6 +297,19 @@ export class CollaborationStore {
       CREATE INDEX IF NOT EXISTS idx_queries_workspace ON saved_queries_store(workspace_id);
       CREATE INDEX IF NOT EXISTS idx_dashboards_workspace ON dashboards_store(workspace_id);
       CREATE INDEX IF NOT EXISTS idx_pipelines_workspace ON pipelines_store(workspace_id);
+
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        token_hash TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used INTEGER DEFAULT 0,
+        used_at TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_reset_token_hash ON password_reset_tokens(token_hash);
+      CREATE INDEX IF NOT EXISTS idx_reset_user_id ON password_reset_tokens(user_id);
     `);
 
     // Ensure job_title column exists if table was previously created
@@ -289,6 +317,33 @@ export class CollaborationStore {
       this.db.exec(`ALTER TABLE users ADD COLUMN job_title TEXT;`);
     } catch {
       // Column already exists
+    }
+
+    // Ensure email verification columns exist if table was previously created
+    try {
+      this.db.exec(`ALTER TABLE users ADD COLUMN email_verified_at TEXT;`);
+    } catch {
+      // Column already exists
+    }
+    try {
+      this.db.exec(`ALTER TABLE users ADD COLUMN email_verification_token_hash TEXT;`);
+    } catch {
+      // Column already exists
+    }
+    try {
+      this.db.exec(`ALTER TABLE users ADD COLUMN email_verification_expires_at TEXT;`);
+    } catch {
+      // Column already exists
+    }
+    try {
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_users_email_verification_token_hash ON users(email_verification_token_hash);`);
+    } catch {
+      // Index exists
+    }
+    try {
+      this.db.prepare("UPDATE users SET email_verified_at = COALESCE(email_verified_at, created_at) WHERE id IN ('usr_admin', 'usr_analyst', 'usr_viewer')").run();
+    } catch {
+      // ignore
     }
 
     // Migrate any legacy formatted names to clean names + job_title
@@ -347,13 +402,13 @@ export class CollaborationStore {
     const viewerAuth = CollaborationStore.hashPassword('ViewerPass123!');
 
     const insertUser = this.db.prepare(`
-      INSERT INTO users (id, name, email, password_hash, salt, job_title, avatar, status, role, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, name, email, password_hash, salt, job_title, avatar, status, role, created_at, updated_at, email_verified_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    insertUser.run('usr_admin', 'Alex Rivera', 'admin@datapilot.io', adminAuth.hash, adminAuth.salt, 'Lead Data Architect', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80', 'active', 'OWNER', now, now);
-    insertUser.run('usr_analyst', 'Sarah Chen', 'analyst@datapilot.io', analystAuth.hash, analystAuth.salt, 'Senior Analyst', 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&auto=format&fit=crop&q=80', 'active', 'ANALYST', now, now);
-    insertUser.run('usr_viewer', 'Marcus Brody', 'viewer@datapilot.io', viewerAuth.hash, viewerAuth.salt, 'Stakeholder', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80', 'active', 'VIEWER', now, now);
+    insertUser.run('usr_admin', 'Alex Rivera', 'admin@datapilot.io', adminAuth.hash, adminAuth.salt, 'Lead Data Architect', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80', 'active', 'OWNER', now, now, now);
+    insertUser.run('usr_analyst', 'Sarah Chen', 'analyst@datapilot.io', analystAuth.hash, analystAuth.salt, 'Senior Analyst', 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&auto=format&fit=crop&q=80', 'active', 'ANALYST', now, now, now);
+    insertUser.run('usr_viewer', 'Marcus Brody', 'viewer@datapilot.io', viewerAuth.hash, viewerAuth.salt, 'Stakeholder', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80', 'active', 'VIEWER', now, now, now);
 
     // 2. Seed Workspaces
     const insertWs = this.db.prepare(`
@@ -469,17 +524,21 @@ ORDER BY 1 DESC;`,
   // ==========================================
   public getUserById(id: string): User | null {
     const row = this.db.prepare(`
-      SELECT id, name, email, job_title as jobTitle, avatar, status, role, created_at as createdAt, updated_at as updatedAt, last_login_at as lastLoginAt
+      SELECT id, name, email, job_title as jobTitle, avatar, status, role, created_at as createdAt, updated_at as updatedAt, last_login_at as lastLoginAt, email_verified_at as emailVerifiedAt
       FROM users WHERE id = ?
-    `).get(id) as unknown as User | undefined;
-    return row || null;
+    `).get(id) as any;
+    if (!row) return null;
+    return {
+      ...row,
+      emailVerified: Boolean(row.emailVerifiedAt)
+    };
   }
 
   public getUserByEmail(email: string): UserAuthRecord | null {
     let row = this.db.prepare(`
-      SELECT id, name, email, password_hash as passwordHash, salt, job_title as jobTitle, avatar, status, role, created_at as createdAt, updated_at as updatedAt, last_login_at as lastLoginAt
+      SELECT id, name, email, password_hash as passwordHash, salt, job_title as jobTitle, avatar, status, role, created_at as createdAt, updated_at as updatedAt, last_login_at as lastLoginAt, email_verified_at as emailVerifiedAt, email_verification_token_hash as emailVerificationTokenHash, email_verification_expires_at as emailVerificationExpiresAt
       FROM users WHERE LOWER(email) = LOWER(?)
-    `).get(email) as unknown as UserAuthRecord | undefined;
+    `).get(email) as any;
 
     if (!row && typeof email === 'string') {
       const lower = email.toLowerCase().trim();
@@ -491,12 +550,16 @@ ORDER BY 1 DESC;`,
       }
       if (altEmail) {
         row = this.db.prepare(`
-          SELECT id, name, email, password_hash as passwordHash, salt, job_title as jobTitle, avatar, status, role, created_at as createdAt, updated_at as updatedAt, last_login_at as lastLoginAt
+          SELECT id, name, email, password_hash as passwordHash, salt, job_title as jobTitle, avatar, status, role, created_at as createdAt, updated_at as updatedAt, last_login_at as lastLoginAt, email_verified_at as emailVerifiedAt, email_verification_token_hash as emailVerificationTokenHash, email_verification_expires_at as emailVerificationExpiresAt
           FROM users WHERE LOWER(email) = LOWER(?)
-        `).get(altEmail) as unknown as UserAuthRecord | undefined;
+        `).get(altEmail) as any;
       }
     }
-    return row || null;
+    if (!row) return null;
+    return {
+      ...row,
+      emailVerified: Boolean(row.emailVerifiedAt)
+    };
   }
 
   public createUser(params: {
@@ -506,16 +569,19 @@ ORDER BY 1 DESC;`,
     jobTitle?: string;
     avatar?: string;
     role?: UserRole;
+    emailVerified?: boolean;
+    emailVerifiedAt?: string | null;
   }): User {
     const id = `usr_${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`;
     const now = new Date().toISOString();
     const { hash, salt } = CollaborationStore.hashPassword(params.password);
     const role = params.role || 'ANALYST';
+    const emailVerifiedAt = params.emailVerified ? (params.emailVerifiedAt || now) : null;
 
     this.db.prepare(`
-      INSERT INTO users (id, name, email, password_hash, salt, job_title, avatar, status, role, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
-    `).run(id, params.name, params.email.toLowerCase().trim(), hash, salt, params.jobTitle || null, params.avatar || null, role, now, now);
+      INSERT INTO users (id, name, email, password_hash, salt, job_title, avatar, status, role, created_at, updated_at, email_verified_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+    `).run(id, params.name, params.email.toLowerCase().trim(), hash, salt, params.jobTitle || null, params.avatar || null, role, now, now, emailVerifiedAt);
 
     return {
       id,
@@ -526,7 +592,9 @@ ORDER BY 1 DESC;`,
       status: 'active',
       role,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      emailVerified: Boolean(emailVerifiedAt),
+      emailVerifiedAt
     };
   }
 
@@ -569,10 +637,15 @@ ORDER BY 1 DESC;`,
   }
 
   public listAllUsers(): User[] {
-    return this.db.prepare(`
-      SELECT id, name, email, job_title as jobTitle, avatar, status, role, created_at as createdAt, updated_at as updatedAt, last_login_at as lastLoginAt
+    const rows = this.db.prepare(`
+      SELECT id, name, email, job_title as jobTitle, avatar, status, role, created_at as createdAt, updated_at as updatedAt, last_login_at as lastLoginAt, email_verified_at as emailVerifiedAt
       FROM users ORDER BY created_at ASC
-    `).all() as unknown as User[];
+    `).all() as any[];
+
+    return rows.map(r => ({
+      ...r,
+      emailVerified: Boolean(r.emailVerifiedAt)
+    }));
   }
 
   public createSession(userId: string, ipAddress?: string, userAgent?: string): Session {
@@ -633,6 +706,101 @@ ORDER BY 1 DESC;`,
       FROM sessions WHERE user_id = ? AND expires_at > datetime('now')
       ORDER BY last_accessed_at DESC
     `).all(userId) as unknown as Session[];
+  }
+
+  public revokeAllSessionsForUser(userId: string): void {
+    this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+  }
+
+  // ==========================================
+  // PASSWORD RESET TOKENS
+  // ==========================================
+  public createPasswordResetToken(userId: string, tokenHash: string, expiresAt: string): PasswordResetTokenRecord {
+    const id = 'prt_' + crypto.randomBytes(12).toString('hex');
+    const createdAt = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, used, created_at)
+      VALUES (?, ?, ?, ?, 0, ?)
+    `).run(id, userId, tokenHash, expiresAt, createdAt);
+
+    return {
+      id,
+      userId,
+      tokenHash,
+      expiresAt,
+      used: 0,
+      createdAt
+    };
+  }
+
+  public getPasswordResetTokenByHash(tokenHash: string): PasswordResetTokenRecord | null {
+    const row = this.db.prepare(`
+      SELECT id, user_id as userId, token_hash as tokenHash, expires_at as expiresAt, used, used_at as usedAt, created_at as createdAt
+      FROM password_reset_tokens
+      WHERE token_hash = ?
+    `).get(tokenHash) as any;
+
+    if (!row) return null;
+    return {
+      ...row,
+      used: row.used ? 1 : 0
+    };
+  }
+
+  public markPasswordResetTokenUsed(id: string): void {
+    const now = new Date().toISOString();
+    this.db.prepare('UPDATE password_reset_tokens SET used = 1, used_at = ? WHERE id = ?').run(now, id);
+  }
+
+  public getLatestResetTokenForUser(userId: string): PasswordResetTokenRecord | null {
+    const row = this.db.prepare(`
+      SELECT id, user_id as userId, token_hash as tokenHash, expires_at as expiresAt, used, used_at as usedAt, created_at as createdAt
+      FROM password_reset_tokens
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(userId) as any;
+
+    if (!row) return null;
+    return {
+      ...row,
+      used: row.used ? 1 : 0
+    };
+  }
+
+  // ==========================================
+  // EMAIL VERIFICATION
+  // ==========================================
+  public getUserByVerificationTokenHash(tokenHash: string): UserAuthRecord | null {
+    const row = this.db.prepare(`
+      SELECT id, name, email, password_hash as passwordHash, salt, job_title as jobTitle, avatar, status, role, created_at as createdAt, updated_at as updatedAt, last_login_at as lastLoginAt, email_verified_at as emailVerifiedAt, email_verification_token_hash as emailVerificationTokenHash, email_verification_expires_at as emailVerificationExpiresAt
+      FROM users
+      WHERE email_verification_token_hash = ?
+    `).get(tokenHash) as any;
+
+    if (!row) return null;
+    return {
+      ...row,
+      emailVerified: Boolean(row.emailVerifiedAt)
+    };
+  }
+
+  public setEmailVerificationToken(userId: string, tokenHash: string | null, expiresAt: string | null): void {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      UPDATE users 
+      SET email_verification_token_hash = ?, email_verification_expires_at = ?, updated_at = ?
+      WHERE id = ?
+    `).run(tokenHash, expiresAt, now, userId);
+  }
+
+  public markEmailAsVerified(userId: string): void {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      UPDATE users 
+      SET email_verified_at = ?, email_verification_token_hash = NULL, email_verification_expires_at = NULL, updated_at = ?
+      WHERE id = ?
+    `).run(now, now, userId);
   }
 
   // ==========================================
