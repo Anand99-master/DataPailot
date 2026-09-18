@@ -397,12 +397,19 @@ router.post('/login', (req: Request, res: Response) => {
 router.post('/logout', (req: Request, res: Response) => {
   try {
     const store = CollaborationStore.getInstance();
-    const token = req.cookies?.datapilot_session || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7) : null);
+    const token = req.cookies?.datapilot_session || 
+      (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.substring(7).trim() : null) || 
+      (req.headers['x-session-token'] as string | undefined);
 
     if (token) {
       store.deleteSession(token);
     }
-    res.clearCookie('datapilot_session');
+    res.clearCookie('datapilot_session', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    });
 
     if (req.authContext?.user) {
       store.logAuditEvent({

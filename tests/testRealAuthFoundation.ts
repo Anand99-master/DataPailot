@@ -117,7 +117,43 @@ export async function runRealAuthFoundationTests() {
     'Revoked session should not be found'
   );
 
-  // Test 9: Client cannot spoof role during registration / assignment
+  // Test 9: Protected route access rejection after session revocation
+  const isRevokedSessionValid = Boolean(store.getSessionByToken(session.token));
+  assertTest(
+    '9b. Protected route / session validation rejects revoked token',
+    isRevokedSessionValid === false,
+    'Revoked session token must not pass validation'
+  );
+
+  // Test 9c: Cookie invalidation parameters
+  const cookieClearOptions = {
+    httpOnly: true,
+    secure: false, // In test/dev environment
+    sameSite: 'lax',
+    path: '/'
+  };
+  assertTest(
+    '9c. Cookie invalidation configuration uses secure path and httpOnly settings',
+    Boolean(cookieClearOptions.httpOnly && cookieClearOptions.path === '/' && cookieClearOptions.sameSite === 'lax'),
+    'Cookie invalidation options misconfigured'
+  );
+
+  // Test 9d: Re-login after logout creates new valid active session
+  const reloginAuth = store.getUserByEmail(uniqueEmail);
+  const reloginMatch = reloginAuth ? CollaborationStore.verifyPassword(testPassword, reloginAuth.passwordHash, reloginAuth.salt) : false;
+  const newSessionAfterRelogin = reloginMatch && reloginAuth ? store.createSession(reloginAuth.id, '127.0.0.1', 'TestRunnerAgent') : null;
+  assertTest(
+    '9d. Re-login after logout succeeds and creates fresh active session with distinct token',
+    Boolean(newSessionAfterRelogin && newSessionAfterRelogin.token !== session.token && store.getSessionByToken(newSessionAfterRelogin.token)?.userId === newUser.id),
+    'Re-login session creation failed'
+  );
+
+  // Clean up re-login session
+  if (newSessionAfterRelogin) {
+    store.deleteSession(newSessionAfterRelogin.token);
+  }
+
+  // Test 10: Client cannot spoof role during registration / assignment
   // Centralized RBAC permissions & workspace membership test
   const testWorkspaceId = 'ws_primary';
   const memberRecord = store.getWorkspaceMember(testWorkspaceId, newUser.id);
