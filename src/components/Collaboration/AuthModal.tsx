@@ -47,6 +47,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, defaultTa
   const [editJobTitle, setEditJobTitle] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   // Sync profile editing inputs when user changes or modal opens
   useEffect(() => {
@@ -475,14 +476,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, defaultTa
 
               <button
                 type="button"
-                disabled={isSavingProfile}
+                disabled={isSavingProfile || isLoggingOut}
                 onClick={async () => {
-                  await logout();
-                  onClose();
+                  if (isLoggingOut) return;
+                  setIsLoggingOut(true);
+                  try {
+                    await logout();
+                    onClose();
+                  } catch (err: any) {
+                    alert(err?.message || 'Failed to sign out.');
+                  } finally {
+                    setIsLoggingOut(false);
+                  }
                 }}
-                className="w-full py-2 px-4 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-semibold transition-colors disabled:opacity-50"
+                className="w-full py-2 px-4 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-semibold transition-colors disabled:opacity-50 flex items-center justify-center space-x-2 cursor-pointer"
               >
-                Sign Out
+                {isLoggingOut ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Signing out...</span>
+                  </>
+                ) : (
+                  <span>Sign Out</span>
+                )}
               </button>
             </div>
           )}

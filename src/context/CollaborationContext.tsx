@@ -93,6 +93,11 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
   const initAuth = useCallback(async () => {
     try {
       setIsLoadingAuth(true);
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('datapilot_logged_out') === 'true') {
+        setUser(null);
+        setIsLoadingAuth(false);
+        return;
+      }
       const res = await CollaborationApiClient.getCurrentAuth();
       if (res.success && (res as any).user) {
         const authData: any = res;
@@ -109,9 +114,12 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             syncAllWorkspaceClients(currentWs.id);
           }
         }
+      } else {
+        setUser(null);
       }
     } catch (err) {
       console.error('Failed to init auth context', err);
+      setUser(null);
     } finally {
       setIsLoadingAuth(false);
     }
@@ -227,6 +235,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
   const login = async (email: string, password: string) => {
     const res = await CollaborationApiClient.login(email, password);
     if (res.success) {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('datapilot_logged_out');
+      }
       setUser(res.user);
       setRole(res.memberRole || res.user?.role || 'ANALYST');
       setPermissions(res.permissions || []);
@@ -239,6 +250,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
   const register = async (name: string, email: string, password: string, regRole?: UserRole) => {
     const res = await CollaborationApiClient.register(name, email, password, regRole);
     if (res.success) {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('datapilot_logged_out');
+      }
       setUser(res.user);
       setRole(res.memberRole || regRole || 'ANALYST');
       setPermissions(res.permissions || []);
@@ -249,11 +263,26 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const logout = async () => {
-    await CollaborationApiClient.logout();
+    try {
+      await CollaborationApiClient.logout();
+    } catch (err) {
+      console.error('Logout error', err);
+    }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('datapilot_logged_out', 'true');
+    }
+    CollaborationApiClient.setSessionToken(null);
+    CollaborationApiClient.setDemoRole(null);
     setUser(null);
+    setActiveWorkspace(null);
+    setWorkspaces([]);
+    setActiveProject(null);
+    setProjects([]);
     setRole('VIEWER');
     setPermissions([]);
-    await initAuth();
+    setNotifications([]);
+    setUnreadNotificationsCount(0);
+    setActivities([]);
   };
 
   const updateProfile = async (profileData: { name: string; jobTitle?: string; email?: string; avatar?: string }): Promise<{ success: boolean; error?: string; user?: User }> => {
@@ -278,6 +307,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
   const switchDemoUser = async (demoRole: 'admin' | 'analyst' | 'viewer' | string) => {
     try {
       setIsLoadingAuth(true);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('datapilot_logged_out');
+      }
       const normalizedRole: UserRole = demoRole.toLowerCase() === 'analyst' ? 'ANALYST' : demoRole.toLowerCase() === 'viewer' ? 'VIEWER' : 'OWNER';
       CollaborationApiClient.setDemoRole(normalizedRole);
 
